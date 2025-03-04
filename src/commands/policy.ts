@@ -1,0 +1,529 @@
+// File: src/commands/policy.ts
+// Policy verification commands
+
+import * as fs from 'fs'
+import { Command } from 'commander'
+import {
+  BaseCommandOptions,
+  RoleCredentials,
+  PolicyDocument,
+  PolicyStatement,
+  PolicyVerificationResult,
+  PolicyPrincipalInfo,
+} from '../types'
+import { formatOutput } from '../utils/formatter'
+import { generatePolicyVerificationHtml, openInBrowser } from '../utils/html-formatter'
+import { createOrganizationsClient, createIAMClient, createSTSClient } from '../utils/clients'
+import { getAllAccounts } from '../services/organization'
+import { getUserExists, getRoleExists, getGroupExists } from '../services/iam'
+import { assumeRole } from '../services/sts'
+import { IAMClient } from '@aws-sdk/client-iam'
+import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts'
+import { DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../config/constants'
+
+/**
+ * Create an IAM client with specific credentials (for cross-account access)
+ */
+function createIAMClientWithCredentials(credentials: RoleCredentials): IAMClient {
+  return new IAMClient({
+    region: 'us-east-1', // IAM is a global service but requires a region
+    credentials: {
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
+      sessionToken: credentials.sessionToken,
+    },
+  })
+}
+
+/**
+ * Get the current account ID from the caller identity
+ */
+async function getCurrentAccountId(stsClient: STSClient): Promise<string> {
+  try {
+    const command = new GetCallerIdentityCommand({})
+    const response = await stsClient.send(command)
+    return response.Account || ''
+  } catch (error) {
+    console.error('Error getting caller identity:', error)
+    return ''
+  }
+}
+
+/**
+ * Register policy verification commands
+ */
+export function registerPolicyCommands(program: Command): void {
+  program
+    .command('verify-principals')
+    .description('Verify if principals in a policy document exist')
+    .requiredOption('-f, --file <filePath>', 'Path to JSON policy file')
+    .option('-p, --profile <profile>', 'AWS profile to use (defaults to AWS environment variables if not specified)')
+    .option('-o, --output <format>', 'Output format (json, table, html)', DEFAULT_OUTPUT_FORMAT)
+    .option(
+      '-r, --role-name <roleName>',
+      'Role name to assume in target accounts for cross-account verification',
+      DEFAULT_ROLE_NAME,
+    )
+    .option('--cross-account', 'Enable cross-account verification of principals', false)
+    .action(async (options: BaseCommandOptions & { file: string; roleName?: string; crossAccount?: boolean }) => {
+      await verifyPrincipals(options)
+    })
+}
+
+/**
+ * Implements the verify-principals command
+ */
+async function verifyPrincipals(
+  options: BaseCommandOptions & {
+    file: string
+    roleName?: string
+    crossAccount?: boolean
+  },
+): Promise<void> {
+  try {
+    // Validate file exists
+    if (!fs.existsSync(options.file)) {
+      console.error(`Policy file not found: ${options.file}`)
+      process.exit(1)
+    }
+
+    // Read and parse policy file
+    const policyContent = fs.readFileSync(options.file, 'utf8')
+    const policy = JSON.parse(policyContent) as PolicyDocument
+
+    console.log('Extracting principals from policy...')
+    const principals = extractPrincipals(policy)
+
+    if (principals.length === 0) {
+      console.log('No principals found in the policy.')
+      return
+    }
+
+    console.log(`Found ${principals.length} principals in the policy.`)
+
+    // Create clients
+    const orgClient = createOrganizationsClient(options.profile)
+    const stsClient = createSTSClient(options.profile)
+
+    // Get all accounts in organization for account validation
+    console.log('Fetching organization accounts...')
+    const accounts = await getAllAccounts(orgClient)
+    const accountMap = new Map<string, Record<string, unknown>>()
+    accounts.forEach((account) => {
+      if (account.Id) {
+        accountMap.set(String(account.Id), account)
+      }
+    })
+    console.log(`Found ${accounts.length} accounts in the organization.`)
+
+    // Prepare for cross-account verification
+    const accountCredentialsCache = new Map<string, RoleCredentials>()
+
+    // Verify each principal
+    console.log('Verifying principals...')
+    const results: PolicyVerificationResult[] = []
+
+    for (const principal of principals) {
+      try {
+        const result = await verifyPrincipal(
+          principal,
+          accountMap,
+          options.profile,
+          options.crossAccount
+            ? {
+                enabled: true,
+                roleName: options.roleName || DEFAULT_ROLE_NAME,
+                stsClient,
+                accountCredentialsCache,
+              }
+            : undefined,
+        )
+        results.push(result)
+      } catch (error) {
+        results.push({
+          Principal: principal.Principal,
+          Type: principal.Type,
+          Exists: false,
+          Error: String(error),
+        })
+      }
+    }
+
+    // Format and display results
+    console.log('Verification complete.')
+
+    if (options.output === 'html') {
+      const htmlContent = generatePolicyVerificationHtml(results, policy, 'Policy Principal Verification')
+      openInBrowser(htmlContent, 'verify-principals')
+    } else {
+      formatOutput(results as unknown as Record<string, unknown>[], options.output)
+    }
+  } catch (error) {
+    console.error('Error verifying policy principals:', error)
+    process.exit(1)
+  }
+}
+
+/**
+ * Extract all principals from a policy document
+ */
+function extractPrincipals(policy: PolicyDocument): PolicyPrincipalInfo[] {
+  const principals: PolicyPrincipalInfo[] = []
+
+  // Check if we have a single Statement or an array of Statements
+  const statements = Array.isArray(policy.Statement) ? policy.Statement : [policy.Statement]
+
+  statements.forEach((statement: PolicyStatement) => {
+    // Skip statements without Principal
+    if (!statement.Principal) {
+      return
+    }
+
+    // Handle different Principal formats
+    if (typeof statement.Principal === 'string') {
+      // Handle the "Principal": "*" case
+      if (statement.Principal === '*') {
+        principals.push({
+          Type: 'Any',
+          Principal: '*',
+        })
+      }
+    } else if (typeof statement.Principal === 'object') {
+      // Handle the "Principal": { "Service": "..." } case
+      Object.entries(statement.Principal).forEach(([type, value]) => {
+        if (Array.isArray(value)) {
+          // Handle array of principals
+          value.forEach((principal) => {
+            principals.push(parsePrincipal(type, principal))
+          })
+        } else if (typeof value === 'string') {
+          // Handle single principal
+          principals.push(parsePrincipal(type, value))
+        }
+      })
+    }
+  })
+
+  return principals
+}
+
+/**
+ * Parse a principal string and extract its type and account ID if present
+ */
+function parsePrincipal(type: string, principal: string): PolicyPrincipalInfo {
+  // Special case for wildcard - always use "Any" type for consistency
+  if (principal === '*') {
+    return { Type: 'Any', Principal: principal }
+  }
+
+  // Handle ARNs
+  if (principal.startsWith('arn:aws:')) {
+    const parts = principal.split(':')
+    // arn:aws:iam::123456789012:user/username
+    if (parts.length >= 6 && parts[2] === 'iam') {
+      const accountId = parts[4]
+      const resourcePart = parts[5]
+
+      // Determine the IAM resource type (user, role, group)
+      if (resourcePart.startsWith('user/')) {
+        return {
+          Type: 'IAM user',
+          Principal: principal,
+          AccountId: accountId === '' ? undefined : accountId,
+        }
+      } else if (resourcePart.startsWith('role/')) {
+        return {
+          Type: 'IAM role',
+          Principal: principal,
+          AccountId: accountId === '' ? undefined : accountId,
+        }
+      } else if (resourcePart.startsWith('group/')) {
+        return {
+          Type: 'IAM group',
+          Principal: principal,
+          AccountId: accountId === '' ? undefined : accountId,
+        }
+      } else {
+        // Other IAM resource types
+        return {
+          Type: 'IAM',
+          Principal: principal,
+          AccountId: accountId === '' ? undefined : accountId,
+        }
+      }
+    } else if (parts.length >= 5) {
+      // For non-IAM ARNs or incomplete IAM ARNs
+      const accountId = parts[4]
+      return {
+        Type: type,
+        Principal: principal,
+        AccountId: accountId === '' ? undefined : accountId,
+      }
+    }
+  }
+
+  // Rest of the function remains unchanged
+  // Handle service principals
+  if (type.toLowerCase() === 'service') {
+    return { Type: 'Service', Principal: principal }
+  }
+
+  // Handle AWS account principals
+  if (type.toLowerCase() === 'aws' && /^\d{12}$/.test(principal)) {
+    return { Type: 'AWS', Principal: principal, AccountId: principal }
+  }
+
+  return { Type: type, Principal: principal }
+}
+/**
+ * Verify if a principal exists
+ */
+async function verifyPrincipal(
+  principal: PolicyPrincipalInfo,
+  accountMap: Map<string, Record<string, unknown>>,
+  profile?: string,
+  crossAccount?: {
+    enabled: boolean
+    roleName: string
+    stsClient: STSClient
+    accountCredentialsCache: Map<string, RoleCredentials>
+  },
+): Promise<PolicyVerificationResult> {
+  // Handle wildcard - always "exists"
+  if (principal.Principal === '*') {
+    return {
+      Principal: principal.Principal,
+      Type: principal.Type,
+      Exists: true,
+    }
+  }
+
+  // Handle service principals with more detailed service types
+  if (principal.Type.toLowerCase() === 'service') {
+    // Extract just the service name without domain if it has one
+    let serviceName = principal.Principal
+    if (serviceName.includes('.amazonaws.com')) {
+      serviceName = serviceName.replace('.amazonaws.com', '')
+    }
+
+    return {
+      Principal: principal.Principal,
+      Type: `Service (${serviceName})`,
+      Exists: true,
+    }
+  }
+
+  // Handle CloudFront Origin Access Identity
+  if (principal.Principal.includes('arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity')) {
+    // CloudFront OAI should be considered valid, and we'd need CloudFront APIs to verify them
+    // Since they are special system principals, we'll assume they exist
+    return {
+      Principal: principal.Principal,
+      Type: 'CloudFront OAI',
+      Exists: true,
+      AccountId: 'cloudfront',
+    }
+  }
+
+  // Handle AWS service ARNs that use the format arn:aws:iam::{service}:{resource-type}/etc
+  if (principal.Principal.startsWith('arn:aws:iam::') && !principal.Principal.match(/^\d+$/)) {
+    const arnParts = principal.Principal.split(':')
+    if (arnParts.length >= 5) {
+      const accountPart = arnParts[4]
+
+      // If account part is not a number, it's likely a service principal
+      if (Number.isNaN(Number(accountPart)) && accountPart !== '') {
+        // Known AWS services
+        const knownServices = [
+          'cloudfront',
+          'lambda',
+          's3',
+          'apigateway',
+          'sqs',
+          'sns',
+          'events',
+          'logs',
+          'cognito-identity',
+          'elasticloadbalancing',
+        ]
+
+        if (knownServices.includes(accountPart)) {
+          return {
+            Principal: principal.Principal,
+            Type: `AWS Service (${accountPart})`,
+            Exists: true,
+            AccountId: accountPart,
+          }
+        } else {
+          // Unknown service but still a service ARN
+          return {
+            Principal: principal.Principal,
+            Type: 'AWS Service',
+            Exists: true,
+            AccountId: accountPart,
+          }
+        }
+      }
+    }
+  }
+
+  // Handle AWS account principals
+  if (principal.Type.toLowerCase() === 'aws' && principal.AccountId) {
+    const accountId = principal.AccountId
+    const exists = accountMap.has(accountId)
+
+    return {
+      Principal: principal.Principal,
+      Type: 'AWS Account',
+      Exists: exists,
+      AccountId: accountId,
+    }
+  }
+
+  // Handle IAM principals (users, roles, groups)
+  if (principal.Principal.includes('iam::')) {
+    // Extract principal type (user, role, group) and name
+    const arnParts = principal.Principal.split(':')
+
+    if (arnParts.length < 6) {
+      return {
+        Principal: principal.Principal,
+        Type: 'Unknown IAM',
+        Exists: false,
+        Error: 'Invalid IAM ARN format',
+      }
+    }
+
+    const accountId = arnParts[4]
+    const resourceParts = arnParts[5].split('/')
+
+    // Check if account exists in organization
+    if (!accountMap.has(accountId)) {
+      return {
+        Principal: principal.Principal,
+        Type: 'IAM',
+        Exists: false,
+        AccountId: accountId,
+        Error: 'Account not found in organization',
+      }
+    }
+
+    // Handle IAM principal types
+    const iamType = resourceParts[0]
+    const iamName = resourceParts.slice(1).join('/')
+
+    if (!iamName) {
+      return {
+        Principal: principal.Principal,
+        Type: `IAM ${iamType}`,
+        Exists: false,
+        AccountId: accountId,
+        Error: 'Invalid IAM resource format',
+      }
+    }
+
+    // Get AWS account status
+    const accountStatus = accountMap.get(accountId)?.Status
+    if (accountStatus !== 'ACTIVE') {
+      return {
+        Principal: principal.Principal,
+        Type: `IAM ${iamType}`,
+        Exists: false,
+        AccountId: accountId,
+        Error: `Account status is ${accountStatus || 'Unknown'}`,
+      }
+    }
+
+    let iamClient: IAMClient
+
+    // Determine if we need cross-account verification
+    if (crossAccount?.enabled && accountId !== (await getCurrentAccountId(crossAccount.stsClient))) {
+      // For cross-account verification
+      try {
+        // Check if we already have cached credentials for this account
+        let credentials = crossAccount.accountCredentialsCache.get(accountId)
+
+        if (!credentials) {
+          // If not, assume role and get credentials
+          console.log(`Assuming role ${crossAccount.roleName} in account ${accountId}...`)
+          credentials = await assumeRole(crossAccount.stsClient, accountId, crossAccount.roleName)
+
+          if (!credentials) {
+            return {
+              Principal: principal.Principal,
+              Type: `IAM ${iamType}`,
+              Exists: false,
+              AccountId: accountId,
+              Error: `Could not assume role in account ${accountId}`,
+            }
+          }
+
+          // Cache the credentials
+          crossAccount.accountCredentialsCache.set(accountId, credentials)
+        }
+
+        // Create IAM client with assumed role credentials
+        iamClient = createIAMClientWithCredentials(credentials)
+      } catch (error) {
+        return {
+          Principal: principal.Principal,
+          Type: `IAM ${iamType}`,
+          Exists: false,
+          AccountId: accountId,
+          Error: `Error assuming role: ${error}`,
+        }
+      }
+    } else {
+      // For same-account verification
+      iamClient = createIAMClient(profile)
+    }
+
+    // Check if IAM resource exists
+    let exists = false
+
+    try {
+      switch (iamType) {
+        case 'user':
+          exists = await getUserExists(iamClient, iamName)
+          break
+        case 'role':
+          exists = await getRoleExists(iamClient, iamName)
+          break
+        case 'group':
+          exists = await getGroupExists(iamClient, iamName)
+          break
+        default:
+          return {
+            Principal: principal.Principal,
+            Type: `Unknown IAM (${iamType})`,
+            Exists: false,
+            AccountId: accountId,
+            Error: `Unsupported IAM resource type: ${iamType}`,
+          }
+      }
+
+      return {
+        Principal: principal.Principal,
+        Type: `IAM ${iamType}`,
+        Exists: exists,
+        AccountId: accountId,
+      }
+    } catch (error) {
+      return {
+        Principal: principal.Principal,
+        Type: `IAM ${iamType}`,
+        Exists: false,
+        AccountId: accountId,
+        Error: String(error),
+      }
+    }
+  }
+
+  // Default case for unrecognized principals
+  return {
+    Principal: principal.Principal,
+    Type: principal.Type,
+    Exists: false,
+    Error: 'Unrecognized principal format',
+  }
+}

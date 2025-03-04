@@ -1,0 +1,60 @@
+{
+  "name": "aws-org",
+  "version": "0.1.0",
+  "description": "CLI tool to get information from AWS Organizations",
+  "main": "dist/index.js",
+  "author": "Eric Bellavance <ericbellavance@hotmail.com> (https://www.ericbellavance.com/)",
+  "homepage": "https://github.com/ebellavance/aws-org#readme",
+  "keywords": [],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebellavance/aws-org.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ebellavance/aws-org/issues"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "bin": {
+    "aws-org": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "package": "pkg . --targets node22-win-x64,node22-macos-x64 --output bin/aws-org",
+    "lint:ts": "tsc --noEmit",
+    "lint:eslint": "eslint ./src/**/*.ts",
+    "lint:eslint:fix": "eslint ./src/**/*.ts --fix",
+    "lint:prettier": "prettier --check .",
+    "lint:prettier:fix": "prettier --write .",
+    "lint": "npm run lint:eslint && npm run lint:prettier",
+    "lint:fix": "npm run lint:eslint:fix && npm run lint:prettier:fix"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.756.0",
+    "@aws-sdk/client-elastic-load-balancing": "^3.758.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.758.0",
+    "@aws-sdk/client-iam": "^3.758.0",
+    "@aws-sdk/client-opensearch": "^3.750.0",
+    "@aws-sdk/client-organizations": "^3.750.0",
+    "@aws-sdk/client-rds": "^3.753.0",
+    "@aws-sdk/client-sts": "^3.750.0",
+    "@aws-sdk/credential-providers": "^3.750.0",
+    "commander": "^13.1.0",
+    "console-table-printer": "^2.12.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "@types/node": "^22.13.5",
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.3",
+    "prettier": "^3.5.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.25.0"
+  }
+}
