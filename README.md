@@ -24,6 +24,10 @@ A command-line interface tool to retrieve and analyze information from AWS Organ
 
 ```bash
 git clone https://github.com/ebellavance/aws-org.git
+
+# Copy contants.example.ts to constants.ts than adjust constants value
+copy constants.example.ts constants.ts
+
 # Using npm
 npm install
 npm run build

@@ -131,3 +131,6 @@ dist
 
 #Snyk
 .DS_Store
+
+#Constants
+constants.ts
