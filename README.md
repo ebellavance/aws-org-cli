@@ -33,6 +33,9 @@ npm install
 npm run build
 npm link
 
+# On Macos/Linux you need to make the built script executable
+chmod +x ./dist/index.js
+
 ```
 
 ## Authentication
