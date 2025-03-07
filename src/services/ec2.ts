@@ -96,6 +96,27 @@ export function formatInstanceInfo(
   const nameTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Name')
   const name = nameTag?.Value || 'Unnamed'
 
+  // Determine OS based on platform and image information
+  let os = 'Unknown'
+
+  // AWS provides platform information for Windows instances
+  if (instance.Platform) {
+    // Use case-insensitive comparison to handle "Windows" vs "windows"
+    os = instance.Platform.toLowerCase() === 'windows' ? 'Windows' : instance.Platform
+  } else {
+    // For non-Windows instances, check if there's an OS tag
+    const osTag = instance.Tags?.find(
+      (tag: { Key?: string; Value?: string }) => tag.Key === 'OS' || tag.Key === 'os' || tag.Key === 'Operating-System',
+    )
+
+    if (osTag?.Value) {
+      os = osTag.Value
+    } else {
+      // If no explicit OS information, assume Linux (most common for non-Windows)
+      os = 'Linux'
+    }
+  }
+
   return {
     AccountId: accountId,
     AccountName: accountName,
@@ -106,9 +127,9 @@ export function formatInstanceInfo(
     Type: instance.InstanceType || 'Unknown',
     PrivateIp: instance.PrivateIpAddress || 'None',
     PublicIp: instance.PublicIpAddress || 'None',
+    OS: os,
   }
 }
-
 /**
  * Add pricing information to a list of EC2 instances
  * @param instances List of EC2 instances
@@ -118,14 +139,15 @@ async function addPricingInformation(instances: EC2InstanceInfo[], credentials: 
   try {
     console.log(`Fetching pricing information for ${instances.length} instances...`)
 
-    // Prepare list of unique instance types and regions
-    const instanceTypeRegionPairs = instances.map((instance) => ({
+    // Prepare list of unique instance types, regions, and operating systems
+    const instanceTypeRegionOSPairs = instances.map((instance) => ({
       type: instance.Type,
       region: instance.Region,
+      os: instance.OS,
     }))
 
-    // Batch get pricing information
-    const priceMap = await batchGetEC2Prices(instanceTypeRegionPairs, credentials)
+    // Batch get pricing information with OS-specific pricing
+    const priceMap = await batchGetEC2Prices(instanceTypeRegionOSPairs, credentials)
 
     // Add pricing to each instance
     instances.forEach((instance) => {

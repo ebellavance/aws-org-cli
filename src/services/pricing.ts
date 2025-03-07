@@ -31,12 +31,14 @@ function getPricingClient(credentials: RoleCredentials | null): PricingClient {
  * Retrieve the hourly on-demand price for an EC2 instance
  * @param instanceType EC2 instance type (e.g., 't2.micro')
  * @param region AWS region (e.g., 'us-east-1')
+ * @param os Operating system (e.g., 'Linux', 'Windows')
  * @param credentials Role credentials (null for current account)
  * @returns The hourly price as a string or 'Price not found' if not available
  */
 export async function getEC2HourlyPrice(
   instanceType: string,
   region: string,
+  os: string = 'Linux',
   credentials: RoleCredentials | null = null,
 ): Promise<string> {
   try {
@@ -48,13 +50,16 @@ export async function getEC2HourlyPrice(
       return 'Region not recognized'
     }
 
+    // Normalize OS name for pricing API
+    const normalizedOS = normalizeOSForPricing(os)
+
     // Define filters for the pricing API
     const filters: Filter[] = [
       { Type: 'TERM_MATCH' as const, Field: 'serviceCode', Value: 'AmazonEC2' },
       { Type: 'TERM_MATCH' as const, Field: 'instanceType', Value: instanceType },
       { Type: 'TERM_MATCH' as const, Field: 'location', Value: regionName },
       { Type: 'TERM_MATCH' as const, Field: 'tenancy', Value: 'Shared' },
-      { Type: 'TERM_MATCH' as const, Field: 'operatingSystem', Value: 'Linux' }, // Default to Linux pricing
+      { Type: 'TERM_MATCH' as const, Field: 'operatingSystem', Value: normalizedOS },
       { Type: 'TERM_MATCH' as const, Field: 'capacityStatus', Value: 'Used' },
       { Type: 'TERM_MATCH' as const, Field: 'preInstalledSw', Value: 'NA' },
     ]
@@ -81,7 +86,7 @@ export async function getEC2HourlyPrice(
         const currency = Object.keys(pricePerUnit)[0]
         const price = pricePerUnit[currency]
 
-        return `${price} ${currency}/hr`
+        return `${price} ${currency}/hr (${normalizedOS})`
       }
     }
 
@@ -89,6 +94,34 @@ export async function getEC2HourlyPrice(
   } catch (error) {
     console.error(`Error fetching EC2 hourly price for ${instanceType} in ${region}:`, error)
     return 'Error retrieving price'
+  }
+}
+
+/**
+ * Normalize OS names to match AWS Pricing API values
+ * @param os The operating system value from instance metadata
+ * @returns Normalized OS name for pricing API
+ */
+function normalizeOSForPricing(os: string): string {
+  // Convert OS to lowercase for comparison
+  const osLower = os.toLowerCase()
+
+  if (osLower.includes('windows')) {
+    return 'Windows'
+  } else if (osLower.includes('rhel') || osLower.includes('red hat')) {
+    return 'RHEL'
+  } else if (osLower.includes('suse')) {
+    return 'SUSE'
+  } else if (osLower.includes('ubuntu')) {
+    return 'Linux' // AWS treats Ubuntu as standard Linux for pricing
+  } else if (osLower.includes('amazon') || osLower.includes('amzn')) {
+    return 'Linux' // Amazon Linux is priced as Linux
+  } else if (osLower.includes('centos')) {
+    return 'Linux' // CentOS is priced as Linux
+  } else if (osLower.includes('debian')) {
+    return 'Linux' // Debian is priced as Linux
+  } else {
+    return 'Linux' // Default to Linux for unknown OS
   }
 }
 
@@ -131,28 +164,29 @@ function getRegionName(regionCode: string): string | undefined {
 /**
  * Get pricing information for multiple EC2 instances in batch
  * - Reduces API calls by caching results for the same instance type and region
- * @param instances Array of instance type and region pairs
+ * @param instances Array of instance type, region, and OS pairs
  * @param credentials Role credentials (null for current account)
  * @returns Map of "instanceType:region" to hourly price
  */
 export async function batchGetEC2Prices(
-  instances: Array<{ type: string; region: string }>,
+  instances: Array<{ type: string; region: string; os: string }>,
   credentials: RoleCredentials | null = null,
 ): Promise<Map<string, string>> {
   // Create a map to store results
   const priceMap = new Map<string, string>()
 
-  // Create a set of unique instance type + region combinations to query
+  // Create a set of unique instance type + region + os combinations to query
   const uniqueCombinations = new Set<string>()
-  instances.forEach(({ type, region }) => {
-    uniqueCombinations.add(`${type}:${region}`)
+  instances.forEach(({ type, region, os }) => {
+    uniqueCombinations.add(`${type}:${region}:${os}`)
   })
 
   // Query each unique combination
   const promises = Array.from(uniqueCombinations).map(async (combo) => {
-    const [type, region] = combo.split(':')
-    const price = await getEC2HourlyPrice(type, region, credentials)
-    priceMap.set(combo, price)
+    const [type, region, os] = combo.split(':')
+    const price = await getEC2HourlyPrice(type, region, os, credentials)
+    // Store with just type:region as key for backward compatibility
+    priceMap.set(`${type}:${region}`, price)
   })
 
   // Wait for all queries to complete
@@ -174,15 +208,17 @@ const CACHE_EXPIRATION = 60 * 60 * 1000
  * Get EC2 hourly price with caching
  * @param instanceType EC2 instance type
  * @param region AWS region
+ * @param os Operating system
  * @param credentials Role credentials (null for current account)
  * @returns The hourly price as a string
  */
 export async function getEC2HourlyPriceCached(
   instanceType: string,
   region: string,
+  os: string = 'Linux',
   credentials: RoleCredentials | null = null,
 ): Promise<string> {
-  const cacheKey = `${instanceType}:${region}`
+  const cacheKey = `${instanceType}:${region}:${os}`
 
   // Check if we have a valid cached entry
   const cachedData = pricingCache.get(cacheKey)
@@ -193,7 +229,7 @@ export async function getEC2HourlyPriceCached(
   }
 
   // Fetch fresh price data
-  const price = await getEC2HourlyPrice(instanceType, region, credentials)
+  const price = await getEC2HourlyPrice(instanceType, region, os, credentials)
 
   // Cache the result
   pricingCache.set(cacheKey, {

@@ -1,5 +1,5 @@
 // File: src/templates/ec2.ts
-// EC2 HTML report template with pricing information
+// EC2 HTML report template with pricing information and OS details
 
 import { EC2InstanceInfo } from '../types'
 
@@ -18,7 +18,6 @@ export function generateEC2Html(
 ): string {
   // Group instances by account for visualization
   const accountGroups = new Map<string, EC2InstanceInfo[]>()
-  //const accountMap = new Map<string, string>() // Map AccountId to AccountName
 
   // Initialize accounts map
   if (allAccounts && allAccounts.length > 0) {
@@ -26,7 +25,6 @@ export function generateEC2Html(
       if (account.Id && (account.Status === 'ACTIVE' || !account.Status)) {
         const accountId = String(account.Id)
         const accountName = String(account.Name || 'Unknown')
-        //accountMap.set(accountId, accountName)
 
         // Initialize empty array for accounts without instances
         const key = `${accountId} (${accountName})`
@@ -41,7 +39,6 @@ export function generateEC2Html(
   instances.forEach((instance) => {
     const accountId = instance.AccountId
     const accountName = instance.AccountName
-    //accountMap.set(accountId, accountName) // Update map with any new accounts found
 
     const key = `${accountId} (${accountName})`
     if (!accountGroups.has(key)) {
@@ -64,6 +61,13 @@ export function generateEC2Html(
   instances.forEach((instance) => {
     const state = instance.State || 'Unknown'
     instancesByState.set(state, (instancesByState.get(state) || 0) + 1)
+  })
+
+  // Group instances by OS
+  const instancesByOS = new Map<string, number>()
+  instances.forEach((instance) => {
+    const os = instance.OS || 'Unknown'
+    instancesByOS.set(os, (instancesByOS.get(os) || 0) + 1)
   })
 
   // Check if pricing data is available
@@ -117,9 +121,28 @@ export function generateEC2Html(
           <div class="summary-value">${runningInstances.length}</div>
         </div>
       </div>
-      <p class="cost-disclaimer">* Cost estimates are based on on-demand Linux pricing and may not reflect actual costs including reserved instances, savings plans, or other discounts.</p>
+      <p class="cost-disclaimer">* Cost estimates are based on on-demand pricing and may not reflect actual costs including reserved instances, savings plans, or other discounts.</p>
     `
   }
+
+  // Create OS distribution section
+  const osDistributionHtml = `
+    <h3>Operating System Distribution</h3>
+    <div class="os-summary">
+      ${Array.from(instancesByOS.entries())
+        .sort((a, b) => b[1] - a[1]) // Sort by count, descending
+        .map(
+          ([os, count]) => `
+        <div class="os-card">
+          <div class="os-name">${os}</div>
+          <div class="os-count">${count}</div>
+          <div class="os-percentage">${((count / totalEC2Instances) * 100).toFixed(1)}%</div>
+        </div>
+      `,
+        )
+        .join('')}
+    </div>
+  `
 
   // Create summary section
   const summaryHtml = `
@@ -158,6 +181,8 @@ export function generateEC2Html(
           .join('')}
       </div>
 
+      ${osDistributionHtml}
+
       ${hasPricing ? pricingSummaryHtml : ''}
     </div>
     
@@ -169,6 +194,20 @@ export function generateEC2Html(
         <button class="filter-button" onclick="showEmptyAccounts()">Show Accounts Without EC2</button>
         <button class="filter-button" onclick="expandAllAccounts()">Expand All</button>
         <button class="filter-button" onclick="collapseAllAccounts()">Collapse All</button>
+      </div>
+      <div class="filter-row">
+        <div class="search-container">
+          <input type="text" id="instanceSearch" placeholder="Search instances..." onkeyup="filterInstances()">
+        </div>
+        <div class="filter-dropdown">
+          <select id="osFilter" onchange="filterByOS()">
+            <option value="all">All Operating Systems</option>
+            ${Array.from(instancesByOS.keys())
+              .sort()
+              .map((os) => `<option value="${os}">${os}</option>`)
+              .join('')}
+          </select>
+        </div>
       </div>
     </div>
   `
@@ -376,6 +415,35 @@ export function generateEC2Html(
         .state-count {
             font-size: 1.5em;
         }
+        .os-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 20px;
+        }
+        .os-card {
+            background-color: #f0f7ff;
+            border: 1px solid #b8daff;
+            color: #004085;
+            padding: 10px;
+            border-radius: 5px;
+            min-width: 120px;
+            text-align: center;
+            flex: 1;
+        }
+        .os-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .os-count {
+            font-size: 1.5em;
+        }
+        .os-percentage {
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 3px;
+        }
         .account-content {
             overflow: hidden;
             transition: max-height 0.3s ease;
@@ -410,6 +478,7 @@ export function generateEC2Html(
             flex-wrap: wrap;
             gap: 10px;
             margin-top: 10px;
+            margin-bottom: 15px;
         }
         .filter-button {
             background-color: #0066cc;
@@ -422,6 +491,29 @@ export function generateEC2Html(
         }
         .filter-button:hover {
             background-color: #004c99;
+        }
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .search-container {
+            flex: 2;
+        }
+        .filter-dropdown {
+            flex: 1;
+        }
+        #instanceSearch {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #osFilter {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
         .account-container.empty-account {
             border-left: 3px solid #ffcc00;
@@ -440,6 +532,9 @@ export function generateEC2Html(
             font-style: italic;
             color: #666;
             margin-top: 5px;
+        }
+        .hidden {
+            display: none !important;
         }
     </style>
     <script>
@@ -496,6 +591,65 @@ export function generateEC2Html(
                 icon.style.transform = 'rotate(-90deg)';
             });
         }
+        
+        function filterInstances() {
+            const searchText = document.getElementById('instanceSearch').value.toLowerCase();
+            const osFilter = document.getElementById('osFilter').value;
+            
+            // First make all accounts visible
+            document.querySelectorAll('.account-container').forEach(container => {
+                container.style.display = 'block';
+            });
+            
+            // For each row in all tables
+            document.querySelectorAll('table tr').forEach(row => {
+                if (row.parentElement.tagName === 'THEAD') return; // Skip header rows
+                
+                let showRow = true;
+                
+                // Apply text search if any
+                if (searchText) {
+                    const rowText = row.textContent.toLowerCase();
+                    showRow = rowText.includes(searchText);
+                }
+                
+                // Apply OS filter if not "all"
+                if (showRow && osFilter !== 'all') {
+                    const osCell = Array.from(row.cells).find((cell, index) => {
+                        // Assuming OS is in the 5th column (index 4)
+                        return index === 4;
+                    });
+                    
+                    if (osCell && osCell.textContent.trim() !== osFilter) {
+                        showRow = false;
+                    }
+                }
+                
+                // Show or hide the row
+                row.classList.toggle('hidden', !showRow);
+            });
+            
+            // Hide accounts with no visible rows
+            document.querySelectorAll('.account-container').forEach(container => {
+                const table = container.querySelector('table');
+                if (table) {
+                    const visibleRows = table.querySelectorAll('tbody tr:not(.hidden)');
+                    container.style.display = visibleRows.length > 0 ? 'block' : 'none';
+                }
+            });
+            
+            // If we hide all accounts with resources, show a message
+            const visibleAccounts = document.querySelectorAll('.account-container[style="display: block;"]');
+            if (visibleAccounts.length === 0) {
+                // Could add a "no results" message here
+                console.log('No matching instances found');
+            }
+        }
+        
+        function filterByOS() {
+            // This will trigger the same filtering logic
+            filterInstances();
+        }
             
         // Run this function when the page loads to show only accounts with resources by default
         document.addEventListener('DOMContentLoaded', function() {
@@ -537,6 +691,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
           <th>Instance ID</th>
           <th>State</th>
           <th>Type</th>
+          <th>Operating System</th>
           <th>Private IP</th>
           <th>Public IP</th>
           <th>Region</th>
@@ -568,12 +723,30 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         stateClass = ''
     }
 
+    // Add OS-specific styling (optional)
+    let osClass = ''
+    const os = instance.OS.toLowerCase()
+    if (os.includes('windows')) {
+      osClass = 'os-windows'
+    } else if (
+      os.includes('linux') ||
+      os.includes('ubuntu') ||
+      os.includes('centos') ||
+      os.includes('debian') ||
+      os.includes('amazon')
+    ) {
+      osClass = 'os-linux'
+    } else if (os.includes('rhel') || os.includes('red hat')) {
+      osClass = 'os-rhel'
+    }
+
     tableHtml += `
       <tr>
         <td>${instance.Name}</td>
         <td>${instance.InstanceId}</td>
         <td class="${stateClass}">${instance.State}</td>
         <td>${instance.Type}</td>
+        <td class="${osClass}">${instance.OS}</td>
         <td>${instance.PrivateIp}</td>
         <td>${instance.PublicIp}</td>
         <td>${instance.Region}</td>

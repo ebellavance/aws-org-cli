@@ -13,6 +13,7 @@ export interface EC2InstanceInfo {
   PrivateIp: string
   PublicIp: string
   HourlyPrice?: string // Optional hourly price field
+  OS: string // Operating system information
 }
 
 // RDS instance information
