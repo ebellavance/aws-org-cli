@@ -1,5 +1,6 @@
 // File: src/commands/policy.ts
-// Policy verification commands
+// Policy verification commands - This file implements commands for verifying
+// IAM policy document principals against actual resources in AWS accounts
 
 import * as fs from 'fs'
 import { Command } from 'commander'
@@ -23,6 +24,12 @@ import { DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../config/constants'
 
 /**
  * Create an IAM client with specific credentials (for cross-account access)
+ * 
+ * This helper function creates an IAM client configured with specific credentials,
+ * which is necessary for cross-account IAM operations.
+ * 
+ * @param credentials - Temporary credentials obtained from assuming a role
+ * @returns Configured IAM client
  */
 function createIAMClientWithCredentials(credentials: RoleCredentials): IAMClient {
   return new IAMClient({
@@ -37,6 +44,12 @@ function createIAMClientWithCredentials(credentials: RoleCredentials): IAMClient
 
 /**
  * Get the current account ID from the caller identity
+ * 
+ * This helper function determines the AWS account ID of the current credentials.
+ * It's used to decide whether cross-account operations are needed.
+ * 
+ * @param stsClient - STS client to use for the API call
+ * @returns The current AWS account ID or empty string if error
  */
 async function getCurrentAccountId(stsClient: STSClient): Promise<string> {
   try {
@@ -51,11 +64,17 @@ async function getCurrentAccountId(stsClient: STSClient): Promise<string> {
 
 /**
  * Register policy verification commands
+ * 
+ * This function registers the 'verify-principals' command with the Commander program.
+ * It defines the command options and connects it to the implementation function.
+ * 
+ * @param program - The Commander program object to register commands with
  */
 export function registerPolicyCommands(program: Command): void {
   program
     .command('verify-principals')
     .description('Verify if principals in a policy document exist')
+    // Define command options with descriptions and default values
     .requiredOption('-f, --file <filePath>', 'Path to JSON policy file')
     .option('-p, --profile <profile>', 'AWS profile to use (defaults to AWS environment variables if not specified)')
     .option('-o, --output <format>', 'Output format (json, table, html)', DEFAULT_OUTPUT_FORMAT)
@@ -65,6 +84,7 @@ export function registerPolicyCommands(program: Command): void {
       DEFAULT_ROLE_NAME,
     )
     .option('--cross-account', 'Enable cross-account verification of principals', false)
+    // Register the action handler that will be called when this command is executed
     .action(async (options: BaseCommandOptions & { file: string; roleName?: string; crossAccount?: boolean }) => {
       await verifyPrincipals(options)
     })
@@ -72,6 +92,12 @@ export function registerPolicyCommands(program: Command): void {
 
 /**
  * Implements the verify-principals command
+ * 
+ * This function is the main implementation of the 'verify-principals' command.
+ * It reads a policy document, extracts principals, and verifies if they exist.
+ * It can perform cross-account verification if the --cross-account flag is provided.
+ * 
+ * @param options - Command options as parsed by Commander
  */
 async function verifyPrincipals(
   options: BaseCommandOptions & {
@@ -108,6 +134,7 @@ async function verifyPrincipals(
     // Get all accounts in organization for account validation
     console.log('Fetching organization accounts...')
     const accounts = await getAllAccounts(orgClient)
+    // Create a map for quick account lookup by ID
     const accountMap = new Map<string, Record<string, unknown>>()
     accounts.forEach((account) => {
       if (account.Id) {
@@ -117,6 +144,7 @@ async function verifyPrincipals(
     console.log(`Found ${accounts.length} accounts in the organization.`)
 
     // Prepare for cross-account verification
+    // This cache helps avoid repeatedly assuming the same role
     const accountCredentialsCache = new Map<string, RoleCredentials>()
 
     // Verify each principal
@@ -125,6 +153,7 @@ async function verifyPrincipals(
 
     for (const principal of principals) {
       try {
+        // verifyPrincipal does the actual verification for each principal
         const result = await verifyPrincipal(
           principal,
           accountMap,
@@ -140,6 +169,7 @@ async function verifyPrincipals(
         )
         results.push(result)
       } catch (error) {
+        // If verification fails, record the error
         results.push({
           Principal: principal.Principal,
           Type: principal.Type,
@@ -153,12 +183,15 @@ async function verifyPrincipals(
     console.log('Verification complete.')
 
     if (options.output === 'html') {
+      // Generate HTML report and open in browser
       const htmlContent = generatePolicyVerificationHtml(results, policy, 'Policy Principal Verification')
       openInBrowser(htmlContent, 'verify-principals')
     } else {
+      // Format as JSON or table
       formatOutput(results as unknown as Record<string, unknown>[], options.output)
     }
   } catch (error) {
+    // Handle any uncaught errors
     console.error('Error verifying policy principals:', error)
     process.exit(1)
   }
@@ -166,6 +199,12 @@ async function verifyPrincipals(
 
 /**
  * Extract all principals from a policy document
+ * 
+ * This function parses an IAM policy document and extracts all principals
+ * (AWS accounts, IAM users, roles, etc.) that are referenced in the policy.
+ * 
+ * @param policy - The parsed policy document
+ * @returns Array of principal information objects
  */
 function extractPrincipals(policy: PolicyDocument): PolicyPrincipalInfo[] {
   const principals: PolicyPrincipalInfo[] = []
@@ -181,7 +220,7 @@ function extractPrincipals(policy: PolicyDocument): PolicyPrincipalInfo[] {
 
     // Handle different Principal formats
     if (typeof statement.Principal === 'string') {
-      // Handle the "Principal": "*" case
+      // Handle the "Principal": "*" case (any principal)
       if (statement.Principal === '*') {
         principals.push({
           Type: 'Any',
@@ -209,6 +248,13 @@ function extractPrincipals(policy: PolicyDocument): PolicyPrincipalInfo[] {
 
 /**
  * Parse a principal string and extract its type and account ID if present
+ * 
+ * This function analyzes a principal string (like an ARN or account ID) and
+ * extracts relevant information like the type (user, role, etc.) and account ID.
+ * 
+ * @param type - The principal type from the policy (AWS, Service, etc.)
+ * @param principal - The principal string value
+ * @returns Structured principal information
  */
 function parsePrincipal(type: string, principal: string): PolicyPrincipalInfo {
   // Special case for wildcard - always use "Any" type for consistency
@@ -262,7 +308,6 @@ function parsePrincipal(type: string, principal: string): PolicyPrincipalInfo {
     }
   }
 
-  // Rest of the function remains unchanged
   // Handle service principals
   if (type.toLowerCase() === 'service') {
     return { Type: 'Service', Principal: principal }
@@ -275,8 +320,19 @@ function parsePrincipal(type: string, principal: string): PolicyPrincipalInfo {
 
   return { Type: type, Principal: principal }
 }
+
 /**
  * Verify if a principal exists
+ * 
+ * This function does the actual verification of whether a principal exists.
+ * It handles different principal types (accounts, users, roles, services)
+ * and can do cross-account verification if configured.
+ * 
+ * @param principal - The principal information to verify
+ * @param accountMap - Map of all accounts in the organization
+ * @param profile - AWS profile to use
+ * @param crossAccount - Cross-account verification configuration
+ * @returns Verification result indicating whether the principal exists
  */
 async function verifyPrincipal(
   principal: PolicyPrincipalInfo,
@@ -482,6 +538,7 @@ async function verifyPrincipal(
     let exists = false
 
     try {
+      // Call the appropriate IAM verification function based on resource type
       switch (iamType) {
         case 'user':
           exists = await getUserExists(iamClient, iamName)
