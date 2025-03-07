@@ -28,7 +28,85 @@ function getPricingClient(credentials: RoleCredentials | null): PricingClient {
 }
 
 /**
- * Retrieve the hourly on-demand price for an EC2 instance
+ * Normalize OS names to match AWS Pricing API values with improved precision
+ * @param os The operating system value from instance metadata
+ * @returns Normalized OS name for pricing API
+ */
+export function normalizeOSForPricing(os: string): string {
+  // Convert OS to lowercase for comparison
+  const osLower = os.toLowerCase()
+
+  // Windows variants
+  if (osLower.includes('windows server 2022') || osLower.includes('windows 2022')) {
+    return 'Windows'
+  } else if (osLower.includes('windows server 2019') || osLower.includes('windows 2019')) {
+    return 'Windows'
+  } else if (osLower.includes('windows server 2016') || osLower.includes('windows 2016')) {
+    return 'Windows'
+  } else if (osLower.includes('windows server 2012') || osLower.includes('windows 2012')) {
+    return 'Windows'
+  } else if (osLower.includes('windows')) {
+    return 'Windows'
+  }
+
+  // Red Hat variants - be very specific to ensure RHEL is properly identified
+  else if (osLower.includes('red hat enterprise linux 9') || osLower.includes('rhel 9')) {
+    return 'RHEL'
+  } else if (osLower.includes('red hat enterprise linux 8') || osLower.includes('rhel 8')) {
+    return 'RHEL'
+  } else if (osLower.includes('red hat enterprise linux 7') || osLower.includes('rhel 7')) {
+    return 'RHEL'
+  } else if (osLower.includes('red hat enterprise linux') || osLower.includes('rhel')) {
+    return 'RHEL'
+  } else if (osLower.includes('red hat') && osLower.includes('linux')) {
+    return 'RHEL'
+  }
+
+  // SUSE variants
+  else if (osLower.includes('suse linux enterprise server') || osLower.includes('sles')) {
+    return 'SUSE'
+  } else if (osLower.includes('suse')) {
+    return 'SUSE'
+  }
+
+  // Ubuntu (priced as Linux)
+  else if (
+    osLower.includes('ubuntu 22.04') ||
+    osLower.includes('ubuntu 20.04') ||
+    osLower.includes('ubuntu 18.04') ||
+    osLower.includes('ubuntu')
+  ) {
+    return 'Linux'
+  }
+
+  // Amazon Linux variants
+  else if (osLower.includes('amazon linux 2023') || osLower.includes('al2023')) {
+    return 'Linux'
+  } else if (osLower.includes('amazon linux 2') || osLower.includes('al2')) {
+    return 'Linux'
+  } else if (osLower.includes('amazon linux') || osLower.includes('amzn')) {
+    return 'Linux'
+  }
+
+  // Other Linux distributions
+  else if (osLower.includes('centos')) {
+    return 'Linux'
+  } else if (osLower.includes('debian')) {
+    return 'Linux'
+  } else if (osLower.includes('fedora')) {
+    return 'Linux'
+  } else if (osLower.includes('linux')) {
+    return 'Linux'
+  }
+
+  // Default fallback
+  else {
+    return 'Linux'
+  }
+}
+
+/**
+ * Retrieve the hourly on-demand price for an EC2 instance with formatted output
  * @param instanceType EC2 instance type (e.g., 't2.micro')
  * @param region AWS region (e.g., 'us-east-1')
  * @param os Operating system (e.g., 'Linux', 'Windows')
@@ -50,8 +128,9 @@ export async function getEC2HourlyPrice(
       return 'Region not recognized'
     }
 
-    // Normalize OS name for pricing API
+    // Use the normalized OS name for pricing API
     const normalizedOS = normalizeOSForPricing(os)
+    console.log(`Looking up price for ${instanceType} in ${region} with OS: ${normalizedOS} (original: ${os})`)
 
     // Define filters for the pricing API
     const filters: Filter[] = [
@@ -86,7 +165,10 @@ export async function getEC2HourlyPrice(
         const currency = Object.keys(pricePerUnit)[0]
         const price = pricePerUnit[currency]
 
-        return `${price} ${currency}/hr (${normalizedOS})`
+        // Format price to show exactly 4 decimal places
+        const formattedPrice = parseFloat(price).toFixed(4)
+
+        return `${formattedPrice} ${currency}/hr (${normalizedOS})`
       }
     }
 
@@ -98,31 +180,42 @@ export async function getEC2HourlyPrice(
 }
 
 /**
- * Normalize OS names to match AWS Pricing API values
- * @param os The operating system value from instance metadata
- * @returns Normalized OS name for pricing API
+ * Get pricing information for multiple EC2 instances in batch with improved OS handling
+ * @param instances Array of instance type, region, and OS pairs
+ * @param credentials Role credentials (null for current account)
+ * @returns Map of "instanceType:region:os" to hourly price
  */
-function normalizeOSForPricing(os: string): string {
-  // Convert OS to lowercase for comparison
-  const osLower = os.toLowerCase()
+export async function batchGetEC2Prices(
+  instances: Array<{ type: string; region: string; os: string }>,
+  credentials: RoleCredentials | null = null,
+): Promise<Map<string, string>> {
+  // Create a map to store results
+  const priceMap = new Map<string, string>()
 
-  if (osLower.includes('windows')) {
-    return 'Windows'
-  } else if (osLower.includes('rhel') || osLower.includes('red hat')) {
-    return 'RHEL'
-  } else if (osLower.includes('suse')) {
-    return 'SUSE'
-  } else if (osLower.includes('ubuntu')) {
-    return 'Linux' // AWS treats Ubuntu as standard Linux for pricing
-  } else if (osLower.includes('amazon') || osLower.includes('amzn')) {
-    return 'Linux' // Amazon Linux is priced as Linux
-  } else if (osLower.includes('centos')) {
-    return 'Linux' // CentOS is priced as Linux
-  } else if (osLower.includes('debian')) {
-    return 'Linux' // Debian is priced as Linux
-  } else {
-    return 'Linux' // Default to Linux for unknown OS
-  }
+  // Create a set of unique instance type + region + os combinations to query
+  const uniqueCombinations = new Set<string>()
+  instances.forEach(({ type, region, os }) => {
+    // Normalize OS here before creating the key
+    const normalizedOS = normalizeOSForPricing(os)
+    uniqueCombinations.add(`${type}:${region}:${normalizedOS}`)
+  })
+
+  // Query each unique combination
+  const promises = Array.from(uniqueCombinations).map(async (combo) => {
+    const [type, region, os] = combo.split(':')
+    const price = await getEC2HourlyPrice(type, region, os, credentials)
+
+    // Store the price with the full key including OS
+    priceMap.set(combo, price)
+
+    // Also store with the simplified key for backward compatibility
+    priceMap.set(`${type}:${region}`, price)
+  })
+
+  // Wait for all queries to complete
+  await Promise.all(promises)
+
+  return priceMap
 }
 
 /**
@@ -162,42 +255,8 @@ function getRegionName(regionCode: string): string | undefined {
 }
 
 /**
- * Get pricing information for multiple EC2 instances in batch
- * - Reduces API calls by caching results for the same instance type and region
- * @param instances Array of instance type, region, and OS pairs
- * @param credentials Role credentials (null for current account)
- * @returns Map of "instanceType:region" to hourly price
- */
-export async function batchGetEC2Prices(
-  instances: Array<{ type: string; region: string; os: string }>,
-  credentials: RoleCredentials | null = null,
-): Promise<Map<string, string>> {
-  // Create a map to store results
-  const priceMap = new Map<string, string>()
-
-  // Create a set of unique instance type + region + os combinations to query
-  const uniqueCombinations = new Set<string>()
-  instances.forEach(({ type, region, os }) => {
-    uniqueCombinations.add(`${type}:${region}:${os}`)
-  })
-
-  // Query each unique combination
-  const promises = Array.from(uniqueCombinations).map(async (combo) => {
-    const [type, region, os] = combo.split(':')
-    const price = await getEC2HourlyPrice(type, region, os, credentials)
-    // Store with just type:region as key for backward compatibility
-    priceMap.set(`${type}:${region}`, price)
-  })
-
-  // Wait for all queries to complete
-  await Promise.all(promises)
-
-  return priceMap
-}
-
-/**
  * Cache for EC2 pricing to reduce API calls
- * Key format: "instanceType:region"
+ * Key format: "instanceType:region:os"
  */
 const pricingCache = new Map<string, { price: string; timestamp: number }>()
 
@@ -218,7 +277,9 @@ export async function getEC2HourlyPriceCached(
   os: string = 'Linux',
   credentials: RoleCredentials | null = null,
 ): Promise<string> {
-  const cacheKey = `${instanceType}:${region}:${os}`
+  // Normalize OS before creating the cache key
+  const normalizedOS = normalizeOSForPricing(os)
+  const cacheKey = `${instanceType}:${region}:${normalizedOS}`
 
   // Check if we have a valid cached entry
   const cachedData = pricingCache.get(cacheKey)

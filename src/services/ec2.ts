@@ -1,9 +1,9 @@
 // File: src/services/ec2.ts
 // EC2 service functions with pricing support
 
-import { DescribeInstancesCommand, Instance, EC2Client } from '@aws-sdk/client-ec2'
+import { DescribeInstancesCommand, DescribeImagesCommand, Instance, EC2Client } from '@aws-sdk/client-ec2'
 import { EC2InstanceInfo, RoleCredentials } from '../types'
-import { batchGetEC2Prices } from './pricing'
+import { batchGetEC2Prices, normalizeOSForPricing } from './pricing'
 
 /**
  * Create an EC2 client for a specific region
@@ -28,7 +28,151 @@ function getEC2Client(region: string, credentials: RoleCredentials | null): EC2C
 }
 
 /**
- * Get EC2 instances in a specific region of an account
+ * Determine OS with higher precision based on available information
+ * @param instance EC2 instance
+ * @returns More precise OS classification
+ */
+async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Promise<string> {
+  // Check platform first (Windows is explicitly provided by AWS)
+  if (instance.Platform) {
+    if (instance.Platform.toLowerCase() === 'windows') {
+      // Get Windows version if available (via tags or description)
+      const winVersionTag = instance.Tags?.find(
+        (tag: { Key?: string; Value?: string }) =>
+          tag.Key?.toLowerCase() === 'windows-version' || tag.Key?.toLowerCase() === 'os-version',
+      )
+
+      if (winVersionTag?.Value) {
+        return `Windows ${winVersionTag.Value}`
+      }
+      return 'Windows'
+    } else {
+      return instance.Platform
+    }
+  }
+
+  // Look for OS tags with more specific information
+  const osTags = instance.Tags?.filter(
+    (tag: { Key?: string; Value?: string }) =>
+      tag.Key?.toLowerCase() === 'os' ||
+      tag.Key?.toLowerCase() === 'operating-system' ||
+      tag.Key?.toLowerCase() === 'os-type' ||
+      tag.Key?.toLowerCase() === 'os-version' ||
+      tag.Key?.toLowerCase() === 'distro',
+  )
+
+  if (osTags && osTags.length > 0) {
+    // Sort tags to prioritize more specific tags (os-version over os)
+    osTags.sort((a, b) => {
+      if (a.Key?.toLowerCase().includes('version')) return -1
+      if (b.Key?.toLowerCase().includes('version')) return 1
+      return 0
+    })
+
+    return osTags[0].Value || 'Linux'
+  }
+
+  // If there's an ImageId, try to get OS information from the AMI
+  if (instance.ImageId) {
+    try {
+      const imageCommand = new DescribeImagesCommand({
+        ImageIds: [instance.ImageId],
+      })
+
+      const imageResponse = await ec2Client.send(imageCommand)
+
+      if (imageResponse.Images && imageResponse.Images.length > 0) {
+        const image = imageResponse.Images[0]
+        const description = image.Description || ''
+        const name = image.Name || ''
+
+        // Check AMI name and description for OS clues
+        if (description.toLowerCase().includes('amazon linux 2023') || name.toLowerCase().includes('al2023')) {
+          return 'Amazon Linux 2023'
+        } else if (description.toLowerCase().includes('amazon linux 2') || name.toLowerCase().includes('al2')) {
+          return 'Amazon Linux 2'
+        } else if (description.toLowerCase().includes('amazon linux') || name.toLowerCase().includes('amzn')) {
+          return 'Amazon Linux'
+        } else if (
+          description.toLowerCase().includes('red hat') ||
+          description.toLowerCase().includes('rhel') ||
+          name.toLowerCase().includes('rhel') ||
+          name.toLowerCase().includes('red hat')
+        ) {
+          // Extract version if available
+          const versionMatch = description.match(/(\d+\.\d+)/) || name.match(/(\d+\.\d+)/)
+          if (versionMatch) {
+            return `Red Hat Enterprise Linux ${versionMatch[1]}`
+          }
+          return 'Red Hat Enterprise Linux'
+        } else if (description.toLowerCase().includes('ubuntu') || name.toLowerCase().includes('ubuntu')) {
+          // Extract version if available
+          const versionMatch = description.match(/(\d+\.\d+)/) || name.toLowerCase().match(/ubuntu[- ]?(\d+\.\d+)/)
+          if (versionMatch) {
+            return `Ubuntu ${versionMatch[1]}`
+          }
+          return 'Ubuntu'
+        } else if (description.toLowerCase().includes('centos') || name.toLowerCase().includes('centos')) {
+          // Extract version if available
+          const versionMatch = description.match(/(\d+\.\d+)/) || name.toLowerCase().match(/centos[- ]?(\d+)/)
+          if (versionMatch) {
+            return `CentOS ${versionMatch[1]}`
+          }
+          return 'CentOS'
+        } else if (description.toLowerCase().includes('debian') || name.toLowerCase().includes('debian')) {
+          // Extract version if available
+          const versionMatch = description.match(/(\d+)/) || name.toLowerCase().match(/debian[- ]?(\d+)/)
+          if (versionMatch) {
+            return `Debian ${versionMatch[1]}`
+          }
+          return 'Debian'
+        } else if (description.toLowerCase().includes('suse') || name.toLowerCase().includes('suse')) {
+          return 'SUSE Linux'
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not retrieve AMI information for ${instance.ImageId}:`, error)
+      // Continue with other detection methods
+    }
+  }
+
+  // Default fallback
+  return 'Linux'
+}
+
+/**
+ * Format instance information with enhanced OS detection
+ */
+export async function formatInstanceInfo(
+  instance: Instance,
+  ec2Client: EC2Client,
+  region: string,
+  accountId: string,
+  accountName: string,
+): Promise<EC2InstanceInfo> {
+  // Extract the Name tag
+  const nameTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Name')
+  const name = nameTag?.Value || 'Unnamed'
+
+  // Get detailed OS information
+  const os = await determineDetailedOS(instance, ec2Client)
+
+  return {
+    AccountId: accountId,
+    AccountName: accountName,
+    Region: region,
+    InstanceId: instance.InstanceId || 'Unknown',
+    Name: name,
+    State: instance.State?.Name || 'Unknown',
+    Type: instance.InstanceType || 'Unknown',
+    PrivateIp: instance.PrivateIpAddress || 'None',
+    PublicIp: instance.PublicIpAddress || 'None',
+    OS: os,
+  }
+}
+
+/**
+ * Get EC2 instances in a specific region of an account with enhanced OS detection
  * @param region AWS region to check
  * @param credentials Role credentials (null for current account)
  * @param accountId Account ID
@@ -59,13 +203,15 @@ export async function getEC2Instances(
 
       // Process the response
       if (response.Reservations) {
-        for (const reservation of response.Reservations) {
-          if (reservation.Instances) {
-            for (const instance of reservation.Instances) {
-              instances.push(formatInstanceInfo(instance, region, accountId, accountName))
-            }
-          }
-        }
+        // Use Promise.all to process instances concurrently
+        const instancePromises = response.Reservations.flatMap((reservation) =>
+          (reservation.Instances || []).map((instance) =>
+            formatInstanceInfo(instance, ec2Client, region, accountId, accountName),
+          ),
+        )
+
+        const formattedInstances = await Promise.all(instancePromises)
+        instances.push(...formattedInstances)
       }
 
       nextToken = response.NextToken
@@ -83,53 +229,6 @@ export async function getEC2Instances(
   }
 }
 
-/**
- * Format instance information
- */
-export function formatInstanceInfo(
-  instance: Instance,
-  region: string,
-  accountId: string,
-  accountName: string,
-): EC2InstanceInfo {
-  // Extract the Name tag
-  const nameTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Name')
-  const name = nameTag?.Value || 'Unnamed'
-
-  // Determine OS based on platform and image information
-  let os = 'Unknown'
-
-  // AWS provides platform information for Windows instances
-  if (instance.Platform) {
-    // Use case-insensitive comparison to handle "Windows" vs "windows"
-    os = instance.Platform.toLowerCase() === 'windows' ? 'Windows' : instance.Platform
-  } else {
-    // For non-Windows instances, check if there's an OS tag
-    const osTag = instance.Tags?.find(
-      (tag: { Key?: string; Value?: string }) => tag.Key === 'OS' || tag.Key === 'os' || tag.Key === 'Operating-System',
-    )
-
-    if (osTag?.Value) {
-      os = osTag.Value
-    } else {
-      // If no explicit OS information, assume Linux (most common for non-Windows)
-      os = 'Linux'
-    }
-  }
-
-  return {
-    AccountId: accountId,
-    AccountName: accountName,
-    Region: region,
-    InstanceId: instance.InstanceId || 'Unknown',
-    Name: name,
-    State: instance.State?.Name || 'Unknown',
-    Type: instance.InstanceType || 'Unknown',
-    PrivateIp: instance.PrivateIpAddress || 'None',
-    PublicIp: instance.PublicIpAddress || 'None',
-    OS: os,
-  }
-}
 /**
  * Add pricing information to a list of EC2 instances
  * @param instances List of EC2 instances
@@ -151,11 +250,23 @@ async function addPricingInformation(instances: EC2InstanceInfo[], credentials: 
 
     // Add pricing to each instance
     instances.forEach((instance) => {
-      const key = `${instance.Type}:${instance.Region}`
-      if (priceMap.has(key)) {
-        instance.HourlyPrice = priceMap.get(key)
+      // First, try to get OS-specific pricing using the full key
+      const normalizedOS = normalizeOSForPricing(instance.OS)
+      const fullKey = `${instance.Type}:${instance.Region}:${normalizedOS}`
+
+      // Try OS-specific key first, fall back to generic key
+      if (priceMap.has(fullKey)) {
+        instance.HourlyPrice = priceMap.get(fullKey)
+        console.log(`Using OS-specific pricing for ${instance.InstanceId} (${instance.OS}): ${instance.HourlyPrice}`)
       } else {
-        instance.HourlyPrice = 'Price not available'
+        // Fall back to the generic key
+        const genericKey = `${instance.Type}:${instance.Region}`
+        if (priceMap.has(genericKey)) {
+          instance.HourlyPrice = priceMap.get(genericKey)
+          console.log(`Using generic pricing for ${instance.InstanceId}: ${instance.HourlyPrice}`)
+        } else {
+          instance.HourlyPrice = 'Price not available'
+        }
       }
     })
 

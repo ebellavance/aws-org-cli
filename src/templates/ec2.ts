@@ -100,13 +100,13 @@ export function generateEC2Html(
     const dailyCost = totalHourlyCost * 24
     const monthlyCost = dailyCost * 30
 
-    // Create pricing summary section
+    // Create pricing summary section with 4 decimal places for hourly costs
     pricingSummaryHtml = `
       <h3>Cost Estimates (Running Instances Only)</h3>
       <div class="cost-summary">
         <div class="summary-card">
           <div class="summary-title">Hourly</div>
-          <div class="summary-value">$${totalHourlyCost.toFixed(2)}</div>
+          <div class="summary-value">$${totalHourlyCost.toFixed(4)}</div>
         </div>
         <div class="summary-card">
           <div class="summary-title">Daily</div>
@@ -116,12 +116,8 @@ export function generateEC2Html(
           <div class="summary-title">Monthly (est.)</div>
           <div class="summary-value">$${monthlyCost.toFixed(2)}</div>
         </div>
-        <div class="summary-card">
-          <div class="summary-title">Running Instances</div>
-          <div class="summary-value">${runningInstances.length}</div>
-        </div>
       </div>
-      <p class="cost-disclaimer">* Cost estimates are based on on-demand pricing and may not reflect actual costs including reserved instances, savings plans, or other discounts.</p>
+      <p class="cost-disclaimer">* Cost estimates are based on on-demand pricing for ${runningInstances.length} running instances and may not reflect actual costs including reserved instances, savings plans, or other discounts.</p>
     `
   }
 
@@ -536,6 +532,48 @@ export function generateEC2Html(
         .hidden {
             display: none !important;
         }
+        .os-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            margin-right: 6px;
+            vertical-align: middle;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .os-windows {
+            color: #0078D7;
+        }
+
+        .os-redhat {
+            color: #EE0000;
+        }
+
+        .os-amazon {
+            color: #FF9900;
+        }
+
+        .os-ubuntu {
+            color: #E95420;
+        }
+
+        .os-centos {
+            color: #9CBE3B;
+        }
+
+        .os-debian {
+            color: #A81D33;
+        }
+
+        .os-suse {
+            color: #0C322C;
+        }
+
+        .os-linux {
+            color: #333333;
+        }
     </style>
     <script>
         function toggleAccount(header) {
@@ -723,21 +761,42 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         stateClass = ''
     }
 
-    // Add OS-specific styling (optional)
+    // Add OS-specific styling
     let osClass = ''
     const os = instance.OS.toLowerCase()
+
     if (os.includes('windows')) {
       osClass = 'os-windows'
-    } else if (
-      os.includes('linux') ||
-      os.includes('ubuntu') ||
-      os.includes('centos') ||
-      os.includes('debian') ||
-      os.includes('amazon')
-    ) {
+    } else if (os.includes('red hat') || os.includes('rhel')) {
+      osClass = 'os-redhat'
+    } else if (os.includes('amazon linux')) {
+      osClass = 'os-amazon'
+    } else if (os.includes('ubuntu')) {
+      osClass = 'os-ubuntu'
+    } else if (os.includes('centos')) {
+      osClass = 'os-centos'
+    } else if (os.includes('debian')) {
+      osClass = 'os-debian'
+    } else if (os.includes('suse')) {
+      osClass = 'os-suse'
+    } else if (os.includes('linux')) {
       osClass = 'os-linux'
-    } else if (os.includes('rhel') || os.includes('red hat')) {
-      osClass = 'os-rhel'
+    }
+
+    // Format the price display if available
+    let formattedPrice = instance.HourlyPrice || 'N/A'
+    if (
+      instance.HourlyPrice &&
+      instance.HourlyPrice !== 'N/A' &&
+      instance.HourlyPrice !== 'Price not available' &&
+      instance.HourlyPrice !== 'Error retrieving price'
+    ) {
+      // Try to extract and reformat the numeric part
+      const priceMatch = instance.HourlyPrice.match(/([0-9.]+)\s+([A-Z]{3})\/hr\s+\(([^)]+)\)/)
+      if (priceMatch) {
+        const [, price, currency, os] = priceMatch
+        formattedPrice = `${parseFloat(price).toFixed(4)} ${currency}/hr (${os})`
+      }
     }
 
     tableHtml += `
@@ -746,11 +805,11 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         <td>${instance.InstanceId}</td>
         <td class="${stateClass}">${instance.State}</td>
         <td>${instance.Type}</td>
-        <td class="${osClass}">${instance.OS}</td>
+        <td class="${osClass}"><div class="os-icon ${osClass}"></div>${instance.OS}</td>
         <td>${instance.PrivateIp}</td>
         <td>${instance.PublicIp}</td>
         <td>${instance.Region}</td>
-        ${hasPricing ? `<td>${instance.HourlyPrice || 'N/A'}</td>` : ''}
+        ${hasPricing ? `<td>${formattedPrice}</td>` : ''}
       </tr>
     `
   })
