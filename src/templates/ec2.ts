@@ -1,5 +1,5 @@
-// File: src/templates/ec2-template.ts
-// EC2 HTML report template
+// File: src/templates/ec2.ts
+// EC2 HTML report template with pricing information
 
 import { EC2InstanceInfo } from '../types'
 
@@ -66,6 +66,61 @@ export function generateEC2Html(
     instancesByState.set(state, (instancesByState.get(state) || 0) + 1)
   })
 
+  // Check if pricing data is available
+  const hasPricing = instances.some((instance) => 'HourlyPrice' in instance)
+
+  // Calculate pricing summary if pricing information is available
+  let pricingSummaryHtml = ''
+
+  if (hasPricing) {
+    // Only calculate for running instances
+    const runningInstances = instances.filter((instance) => instance.State.toLowerCase() === 'running')
+
+    // Calculate estimated hourly cost
+    let totalHourlyCost = 0
+
+    runningInstances.forEach((instance) => {
+      if (instance.HourlyPrice) {
+        // Extract the numeric part from strings like "0.0416 USD/hr"
+        const priceMatch = instance.HourlyPrice.match(/([0-9.]+)/)
+        if (priceMatch && priceMatch[1]) {
+          const price = parseFloat(priceMatch[1])
+          if (!isNaN(price)) {
+            totalHourlyCost += price
+          }
+        }
+      }
+    })
+
+    // Calculate daily and monthly estimates (30-day month)
+    const dailyCost = totalHourlyCost * 24
+    const monthlyCost = dailyCost * 30
+
+    // Create pricing summary section
+    pricingSummaryHtml = `
+      <h3>Cost Estimates (Running Instances Only)</h3>
+      <div class="cost-summary">
+        <div class="summary-card">
+          <div class="summary-title">Hourly</div>
+          <div class="summary-value">$${totalHourlyCost.toFixed(2)}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">Daily</div>
+          <div class="summary-value">$${dailyCost.toFixed(2)}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">Monthly (est.)</div>
+          <div class="summary-value">$${monthlyCost.toFixed(2)}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">Running Instances</div>
+          <div class="summary-value">${runningInstances.length}</div>
+        </div>
+      </div>
+      <p class="cost-disclaimer">* Cost estimates are based on on-demand Linux pricing and may not reflect actual costs including reserved instances, savings plans, or other discounts.</p>
+    `
+  }
+
   // Create summary section
   const summaryHtml = `
     <div class="summary">
@@ -102,6 +157,8 @@ export function generateEC2Html(
           )
           .join('')}
       </div>
+
+      ${hasPricing ? pricingSummaryHtml : ''}
     </div>
     
     <div class="filter-controls">
@@ -262,7 +319,7 @@ export function generateEC2Html(
             margin-bottom: 20px;
             padding: 20px;
         }
-        .summary-cards {
+        .summary-cards, .cost-summary {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
@@ -378,6 +435,12 @@ export function generateEC2Html(
             color: #666;
             font-style: italic;
         }
+        .cost-disclaimer {
+            font-size: 0.8em;
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
     <script>
         function toggleAccount(header) {
@@ -463,6 +526,9 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
     return a.Name.localeCompare(b.Name)
   })
 
+  // Check if pricing data is available for any instance
+  const hasPricing = sortedInstances.some((instance) => 'HourlyPrice' in instance)
+
   let tableHtml = `
     <table>
       <thead>
@@ -474,6 +540,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
           <th>Private IP</th>
           <th>Public IP</th>
           <th>Region</th>
+          ${hasPricing ? '<th>Hourly Price</th>' : ''}
         </tr>
       </thead>
       <tbody>
@@ -510,6 +577,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         <td>${instance.PrivateIp}</td>
         <td>${instance.PublicIp}</td>
         <td>${instance.Region}</td>
+        ${hasPricing ? `<td>${instance.HourlyPrice || 'N/A'}</td>` : ''}
       </tr>
     `
   })

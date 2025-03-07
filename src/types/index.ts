@@ -1,7 +1,7 @@
 // File: src/types/index.ts
 // Central location for shared types
 
-// EC2 instance information
+// EC2 instance information with pricing
 export interface EC2InstanceInfo {
   AccountId: string
   AccountName: string
@@ -12,6 +12,7 @@ export interface EC2InstanceInfo {
   Type: string
   PrivateIp: string
   PublicIp: string
+  HourlyPrice?: string // Optional hourly price field
 }
 
 // RDS instance information

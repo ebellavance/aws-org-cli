@@ -1,5 +1,5 @@
 // File: src/commands/ec2.ts
-// EC2-related commands
+// EC2-related commands with pricing option
 
 import { Command } from 'commander'
 import { MultiRegionCommandOptions, EC2InstanceInfo } from '../types'
@@ -11,6 +11,11 @@ import { getEC2Instances } from '../services/ec2'
 import { collectRegions } from '../utils'
 import { getAccountCredentials } from '../utils/credential-helper'
 import { DEFAULT_REGION, DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../config/constants'
+
+// Extend the command options to include pricing flag
+interface EC2CommandOptions extends MultiRegionCommandOptions {
+  includePricing?: boolean
+}
 
 /**
  * Register EC2 commands
@@ -26,7 +31,8 @@ export function registerEC2Commands(program: Command): void {
     .option('--region <region>', 'AWS region to check (can be specified multiple times)', collectRegions, [
       DEFAULT_REGION,
     ])
-    .action(async (options: MultiRegionCommandOptions) => {
+    .option('-p, --include-pricing', 'Include hourly pricing information for instances')
+    .action(async (options: EC2CommandOptions) => {
       await listEC2Instances(options)
     })
 }
@@ -34,7 +40,7 @@ export function registerEC2Commands(program: Command): void {
 /**
  * Implements the list-ec2 command
  */
-async function listEC2Instances(options: MultiRegionCommandOptions): Promise<void> {
+async function listEC2Instances(options: EC2CommandOptions): Promise<void> {
   try {
     const client = createOrganizationsClient(options.profile)
     const stsClient = createSTSClient(options.profile)
@@ -83,6 +89,7 @@ async function listEC2Instances(options: MultiRegionCommandOptions): Promise<voi
                 credentials, // This could be null if using current credentials
                 accountId,
                 accountName,
+                options.includePricing, // Pass the pricing flag
               )
 
               console.log(`Found ${instancesInRegion.length} instances in ${region} for account ${accountId}`)
