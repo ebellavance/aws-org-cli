@@ -16,16 +16,16 @@ import { DEFAULT_REGION, DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../con
 
 /**
  * Register ELB-related commands with the CLI program
- * 
+ *
  * This function adds the 'list-elb' command to the Commander program object,
  * which allows users to list all Elastic Load Balancers across their AWS organization
  * or in specific accounts.
- * 
+ *
  * @param program The Commander program instance to register the command with
  */
 export function registerELBCommands(program: Command): void {
   program
-    .command('list-elb')          // Define the command name
+    .command('list-elb') // Define the command name
     .description('List Elastic Load Balancers across all accounts in the organization') // Command description
     .option('--profile <profile>', 'AWS profile to use (defaults to AWS environment variables if not specified)')
     .option('-r, --role-name <roleName>', 'Role name to assume in target accounts', DEFAULT_ROLE_NAME)
@@ -42,13 +42,13 @@ export function registerELBCommands(program: Command): void {
 
 /**
  * Implements the list-elb command functionality
- * 
+ *
  * This function:
  * 1. Retrieves accounts from AWS Organizations
  * 2. For each account, gathers ELB information across specified regions
  *    - Includes Classic Load Balancers, Application Load Balancers, and Network Load Balancers
  * 3. Formats and displays the results
- * 
+ *
  * @param options Command options including AWS profile, regions, output format, etc.
  */
 async function listELBs(options: MultiRegionCommandOptions): Promise<void> {

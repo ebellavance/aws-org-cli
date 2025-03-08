@@ -20,15 +20,15 @@ interface EC2CommandOptions extends MultiRegionCommandOptions {
 
 /**
  * Register EC2-related commands with the CLI program
- * 
+ *
  * This function adds the 'list-ec2' command to the Commander program object,
  * which allows users to list all EC2 instances across their AWS organization or in specific accounts.
- * 
+ *
  * @param program The Commander program instance to register the command with
  */
 export function registerEC2Commands(program: Command): void {
   program
-    .command('list-ec2')          // Define the command name
+    .command('list-ec2') // Define the command name
     .description('List EC2 instances across all accounts in the organization') // Command description
     .option('--profile <profile>', 'AWS profile to use (defaults to AWS environment variables if not specified)')
     .option('-r, --role-name <roleName>', 'Role name to assume in target accounts', DEFAULT_ROLE_NAME)
@@ -46,13 +46,13 @@ export function registerEC2Commands(program: Command): void {
 
 /**
  * Implements the list-ec2 command functionality
- * 
+ *
  * This function:
  * 1. Retrieves accounts from AWS Organizations
  * 2. For each account, gathers EC2 instance information across specified regions
  * 3. Optionally adds pricing information
  * 4. Formats and displays the results
- * 
+ *
  * @param options Command options including AWS profile, regions, output format, etc.
  */
 async function listEC2Instances(options: EC2CommandOptions): Promise<void> {

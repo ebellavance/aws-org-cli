@@ -14,10 +14,10 @@ import { DEFAULT_REGION, DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../con
 
 /**
  * Register OpenSearch commands
- * 
+ *
  * This function registers the 'list-opensearch' command with the Commander program.
  * It defines the command options and connects it to the implementation function.
- * 
+ *
  * @param program - The Commander program object to register commands with
  */
 export function registerOpenSearchCommands(program: Command): void {
@@ -40,11 +40,11 @@ export function registerOpenSearchCommands(program: Command): void {
 
 /**
  * Implements the list-opensearch command
- * 
+ *
  * This function is the main implementation of the 'list-opensearch' command.
  * It retrieves OpenSearch domains across one or more AWS accounts and regions,
  * then formats and displays the results.
- * 
+ *
  * @param options - Command options as parsed by Commander
  */
 async function listOpenSearchDomains(options: MultiRegionCommandOptions): Promise<void> {

@@ -1,14 +1,19 @@
 // File: src/services/pricing.ts
 // EC2 pricing service functions
+// This module provides functionality to retrieve AWS EC2 pricing information
+// from the AWS Pricing API and includes helpers for OS normalization and caching.
 
 import { PricingClient, GetProductsCommand, Filter } from '@aws-sdk/client-pricing'
 import { RoleCredentials } from '../types'
 
 /**
  * Create a Pricing client
- * - If credentials are provided, use them (for cross-account access)
- * - If credentials are null, use the default credentials
- * Note: Pricing API is only available in us-east-1 and ap-south-1
+ *
+ * Creates an AWS Pricing client with either provided credentials or default credentials.
+ * Note that the AWS Pricing API is only available in us-east-1 and ap-south-1 regions.
+ *
+ * @param credentials - Role credentials for cross-account access, or null to use default credentials
+ * @returns Configured PricingClient instance
  */
 function getPricingClient(credentials: RoleCredentials | null): PricingClient {
   if (credentials) {
@@ -29,8 +34,13 @@ function getPricingClient(credentials: RoleCredentials | null): PricingClient {
 
 /**
  * Normalize OS names to match AWS Pricing API values with improved precision
- * @param os The operating system value from instance metadata
- * @returns Normalized OS name for pricing API
+ *
+ * AWS Pricing API requires specific operating system identifiers that may not match
+ * the OS strings retrieved from EC2 instance metadata. This function maps various
+ * OS descriptions to the standardized values expected by the Pricing API.
+ *
+ * @param os - The operating system value from instance metadata
+ * @returns Normalized OS name for pricing API (Windows, RHEL, SUSE, or Linux)
  */
 export function normalizeOSForPricing(os: string): string {
   // Convert OS to lowercase for comparison
@@ -107,11 +117,16 @@ export function normalizeOSForPricing(os: string): string {
 
 /**
  * Retrieve the hourly on-demand price for an EC2 instance with formatted output
- * @param instanceType EC2 instance type (e.g., 't2.micro')
- * @param region AWS region (e.g., 'us-east-1')
- * @param os Operating system (e.g., 'Linux', 'Windows')
- * @param credentials Role credentials (null for current account)
- * @returns The hourly price as a string or 'Price not found' if not available
+ *
+ * This function queries the AWS Pricing API for the hourly price of an EC2 instance
+ * based on instance type, region, and operating system. It formats the result as
+ * a human-readable string with currency information.
+ *
+ * @param instanceType - EC2 instance type (e.g., 't2.micro')
+ * @param region - AWS region (e.g., 'us-east-1')
+ * @param os - Operating system (e.g., 'Linux', 'Windows')
+ * @param credentials - Role credentials (null for current account)
+ * @returns The hourly price as a string or error message if not available
  */
 export async function getEC2HourlyPrice(
   instanceType: string,
@@ -133,6 +148,7 @@ export async function getEC2HourlyPrice(
     console.log(`Looking up price for ${instanceType} in ${region} with OS: ${normalizedOS} (original: ${os})`)
 
     // Define filters for the pricing API
+    // These filters help narrow down the specific product we're looking for
     const filters: Filter[] = [
       { Type: 'TERM_MATCH' as const, Field: 'serviceCode', Value: 'AmazonEC2' },
       { Type: 'TERM_MATCH' as const, Field: 'instanceType', Value: instanceType },
@@ -143,6 +159,7 @@ export async function getEC2HourlyPrice(
       { Type: 'TERM_MATCH' as const, Field: 'preInstalledSw', Value: 'NA' },
     ]
 
+    // Create and send the API request
     const command = new GetProductsCommand({
       ServiceCode: 'AmazonEC2',
       Filters: filters,
@@ -151,6 +168,7 @@ export async function getEC2HourlyPrice(
 
     const response = await client.send(command)
 
+    // Process the response if we have pricing data
     if (response.PriceList && response.PriceList.length > 0) {
       // Parse the price list which comes as JSON strings
       const priceData = JSON.parse(response.PriceList[0])
@@ -181,8 +199,12 @@ export async function getEC2HourlyPrice(
 
 /**
  * Get pricing information for multiple EC2 instances in batch with improved OS handling
- * @param instances Array of instance type, region, and OS pairs
- * @param credentials Role credentials (null for current account)
+ *
+ * This function efficiently retrieves pricing for multiple instance type/region/OS
+ * combinations at once, avoiding redundant API calls for duplicate combinations.
+ *
+ * @param instances - Array of instance type, region, and OS pairs
+ * @param credentials - Role credentials (null for current account)
  * @returns Map of "instanceType:region:os" to hourly price
  */
 export async function batchGetEC2Prices(
@@ -193,6 +215,7 @@ export async function batchGetEC2Prices(
   const priceMap = new Map<string, string>()
 
   // Create a set of unique instance type + region + os combinations to query
+  // This avoids making duplicate API calls for the same combination
   const uniqueCombinations = new Set<string>()
   instances.forEach(({ type, region, os }) => {
     // Normalize OS here before creating the key
@@ -200,7 +223,7 @@ export async function batchGetEC2Prices(
     uniqueCombinations.add(`${type}:${region}:${normalizedOS}`)
   })
 
-  // Query each unique combination
+  // Query each unique combination concurrently
   const promises = Array.from(uniqueCombinations).map(async (combo) => {
     const [type, region, os] = combo.split(':')
     const price = await getEC2HourlyPrice(type, region, os, credentials)
@@ -220,6 +243,9 @@ export async function batchGetEC2Prices(
 
 /**
  * Map of AWS region codes to their full names for pricing API
+ *
+ * The pricing API requires region names (e.g., "US East (N. Virginia)")
+ * rather than region codes (e.g., "us-east-1"). This map provides the translation.
  */
 const regionNameMap: Record<string, string> = {
   'us-east-1': 'US East (N. Virginia)',
@@ -247,7 +273,11 @@ const regionNameMap: Record<string, string> = {
 
 /**
  * Get the region name required for pricing API
- * @param regionCode Region code (e.g., 'us-east-1')
+ *
+ * Converts an AWS region code (e.g., 'us-east-1') to the full region name
+ * required by the AWS Pricing API (e.g., 'US East (N. Virginia)').
+ *
+ * @param regionCode - Region code (e.g., 'us-east-1')
  * @returns Full region name for pricing API or undefined if not found
  */
 function getRegionName(regionCode: string): string | undefined {
@@ -256,6 +286,9 @@ function getRegionName(regionCode: string): string | undefined {
 
 /**
  * Cache for EC2 pricing to reduce API calls
+ *
+ * This cache stores previously retrieved pricing information to avoid
+ * redundant API calls within the same execution.
  * Key format: "instanceType:region:os"
  */
 const pricingCache = new Map<string, { price: string; timestamp: number }>()
@@ -265,10 +298,15 @@ const CACHE_EXPIRATION = 60 * 60 * 1000
 
 /**
  * Get EC2 hourly price with caching
- * @param instanceType EC2 instance type
- * @param region AWS region
- * @param os Operating system
- * @param credentials Role credentials (null for current account)
+ *
+ * This function adds caching to the EC2 pricing lookup to reduce API calls
+ * and improve performance. It checks a local cache before making an API call
+ * and caches results for future use.
+ *
+ * @param instanceType - EC2 instance type
+ * @param region - AWS region
+ * @param os - Operating system
+ * @param credentials - Role credentials (null for current account)
  * @returns The hourly price as a string
  */
 export async function getEC2HourlyPriceCached(
@@ -285,14 +323,15 @@ export async function getEC2HourlyPriceCached(
   const cachedData = pricingCache.get(cacheKey)
   const now = Date.now()
 
+  // If cache entry exists and is not expired, return the cached price
   if (cachedData && now - cachedData.timestamp < CACHE_EXPIRATION) {
     return cachedData.price
   }
 
-  // Fetch fresh price data
+  // Fetch fresh price data if not in cache or expired
   const price = await getEC2HourlyPrice(instanceType, region, os, credentials)
 
-  // Cache the result
+  // Cache the result with current timestamp
   pricingCache.set(cacheKey, {
     price,
     timestamp: now,

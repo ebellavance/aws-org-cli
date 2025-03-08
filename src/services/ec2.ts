@@ -1,5 +1,13 @@
 // File: src/services/ec2.ts
-// EC2 service functions with pricing support
+/**
+ * EC2 Service Module
+ *
+ * This module provides functions for interacting with AWS EC2 instances across accounts and regions.
+ * It includes advanced features like:
+ * - Detailed OS detection using multiple methods (platform flag, tags, AMI metadata)
+ * - Integration with AWS Pricing API to retrieve hourly cost estimates
+ * - Formatting instance information into standardized objects
+ */
 
 import { DescribeInstancesCommand, DescribeImagesCommand, Instance, EC2Client } from '@aws-sdk/client-ec2'
 import { EC2InstanceInfo, RoleCredentials } from '../types'
@@ -7,8 +15,14 @@ import { batchGetEC2Prices, normalizeOSForPricing } from './pricing'
 
 /**
  * Create an EC2 client for a specific region
- * - If credentials are provided, use them (for cross-account access)
- * - If credentials are null, use the default credentials
+ *
+ * This function creates an EC2 client for interacting with the AWS EC2 API.
+ * If credentials are provided, they're used for cross-account access.
+ * Otherwise, the default credentials from the AWS SDK are used.
+ *
+ * @param region - AWS region to connect to (e.g., us-east-1)
+ * @param credentials - Role credentials for cross-account access (or null for default credentials)
+ * @returns Configured EC2Client instance
  */
 function getEC2Client(region: string, credentials: RoleCredentials | null): EC2Client {
   if (credentials) {
@@ -28,9 +42,18 @@ function getEC2Client(region: string, credentials: RoleCredentials | null): EC2C
 }
 
 /**
- * Determine OS with higher precision based on available information
- * @param instance EC2 instance
- * @returns More precise OS classification
+ * Determine detailed operating system of an EC2 instance
+ *
+ * This function uses multiple methods to identify the specific OS of an instance:
+ * 1. Platform flag (explicit for Windows)
+ * 2. Instance tags (os, os-version, etc.)
+ * 3. AMI metadata (description and name)
+ *
+ * It tries to be as specific as possible, including version information when available.
+ *
+ * @param instance - EC2 instance from the AWS SDK
+ * @param ec2Client - EC2 client for additional API calls
+ * @returns Detailed OS description (e.g., "Amazon Linux 2", "Ubuntu 20.04", "Windows Server 2019")
  */
 async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Promise<string> {
   // Check platform first (Windows is explicitly provided by AWS)
@@ -75,6 +98,7 @@ async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Pr
   // If there's an ImageId, try to get OS information from the AMI
   if (instance.ImageId) {
     try {
+      // Query the AMI metadata to get OS information
       const imageCommand = new DescribeImagesCommand({
         ImageIds: [instance.ImageId],
       })
@@ -87,6 +111,7 @@ async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Pr
         const name = image.Name || ''
 
         // Check AMI name and description for OS clues
+        // This uses pattern matching to identify specific Linux distributions and versions
         if (description.toLowerCase().includes('amazon linux 2023') || name.toLowerCase().includes('al2023')) {
           return 'Amazon Linux 2023'
         } else if (description.toLowerCase().includes('amazon linux 2') || name.toLowerCase().includes('al2')) {
@@ -141,7 +166,18 @@ async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Pr
 }
 
 /**
- * Format instance information with enhanced OS detection
+ * Format EC2 instance information into a standardized object
+ *
+ * This function transforms the raw EC2 instance data from the AWS SDK into
+ * a standardized EC2InstanceInfo object with consistent property names and values.
+ * It also determines the detailed OS information.
+ *
+ * @param instance - Raw EC2 instance data from AWS SDK
+ * @param ec2Client - EC2 client for additional API calls
+ * @param region - AWS region the instance is in
+ * @param accountId - AWS account ID the instance belongs to
+ * @param accountName - AWS account name for display purposes
+ * @returns Formatted EC2InstanceInfo object
  */
 export async function formatInstanceInfo(
   instance: Instance,
@@ -173,11 +209,17 @@ export async function formatInstanceInfo(
 
 /**
  * Get EC2 instances in a specific region of an account with enhanced OS detection
- * @param region AWS region to check
- * @param credentials Role credentials (null for current account)
- * @param accountId Account ID
- * @param accountName Account name
- * @param includePricing Whether to include pricing information
+ *
+ * This function retrieves all EC2 instances in a specified region and account.
+ * It handles pagination automatically and provides detailed information about each instance.
+ * Optionally, it can retrieve pricing information for each instance type.
+ *
+ * @param region - AWS region to check
+ * @param credentials - Role credentials (null for current account)
+ * @param accountId - Account ID
+ * @param accountName - Account name
+ * @param includePricing - Whether to include pricing information
+ * @returns Array of EC2 instance information objects
  */
 export async function getEC2Instances(
   region: string,
@@ -231,8 +273,13 @@ export async function getEC2Instances(
 
 /**
  * Add pricing information to a list of EC2 instances
- * @param instances List of EC2 instances
- * @param credentials Role credentials (null for current account)
+ *
+ * This function retrieves hourly pricing information for EC2 instances from the AWS Pricing API.
+ * It uses batch queries to minimize API calls and handles OS-specific pricing.
+ *
+ * @param instances - List of EC2 instances to add pricing information to
+ * @param credentials - Role credentials (null for current account)
+ * @returns Promise that resolves when pricing has been added to all instances
  */
 async function addPricingInformation(instances: EC2InstanceInfo[], credentials: RoleCredentials | null): Promise<void> {
   try {

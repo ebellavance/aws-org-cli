@@ -24,10 +24,10 @@ import { DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../config/constants'
 
 /**
  * Create an IAM client with specific credentials (for cross-account access)
- * 
+ *
  * This helper function creates an IAM client configured with specific credentials,
  * which is necessary for cross-account IAM operations.
- * 
+ *
  * @param credentials - Temporary credentials obtained from assuming a role
  * @returns Configured IAM client
  */
@@ -44,10 +44,10 @@ function createIAMClientWithCredentials(credentials: RoleCredentials): IAMClient
 
 /**
  * Get the current account ID from the caller identity
- * 
+ *
  * This helper function determines the AWS account ID of the current credentials.
  * It's used to decide whether cross-account operations are needed.
- * 
+ *
  * @param stsClient - STS client to use for the API call
  * @returns The current AWS account ID or empty string if error
  */
@@ -64,10 +64,10 @@ async function getCurrentAccountId(stsClient: STSClient): Promise<string> {
 
 /**
  * Register policy verification commands
- * 
+ *
  * This function registers the 'verify-principals' command with the Commander program.
  * It defines the command options and connects it to the implementation function.
- * 
+ *
  * @param program - The Commander program object to register commands with
  */
 export function registerPolicyCommands(program: Command): void {
@@ -92,11 +92,11 @@ export function registerPolicyCommands(program: Command): void {
 
 /**
  * Implements the verify-principals command
- * 
+ *
  * This function is the main implementation of the 'verify-principals' command.
  * It reads a policy document, extracts principals, and verifies if they exist.
  * It can perform cross-account verification if the --cross-account flag is provided.
- * 
+ *
  * @param options - Command options as parsed by Commander
  */
 async function verifyPrincipals(
@@ -199,10 +199,10 @@ async function verifyPrincipals(
 
 /**
  * Extract all principals from a policy document
- * 
+ *
  * This function parses an IAM policy document and extracts all principals
  * (AWS accounts, IAM users, roles, etc.) that are referenced in the policy.
- * 
+ *
  * @param policy - The parsed policy document
  * @returns Array of principal information objects
  */
@@ -248,10 +248,10 @@ function extractPrincipals(policy: PolicyDocument): PolicyPrincipalInfo[] {
 
 /**
  * Parse a principal string and extract its type and account ID if present
- * 
+ *
  * This function analyzes a principal string (like an ARN or account ID) and
  * extracts relevant information like the type (user, role, etc.) and account ID.
- * 
+ *
  * @param type - The principal type from the policy (AWS, Service, etc.)
  * @param principal - The principal string value
  * @returns Structured principal information
@@ -323,11 +323,11 @@ function parsePrincipal(type: string, principal: string): PolicyPrincipalInfo {
 
 /**
  * Verify if a principal exists
- * 
+ *
  * This function does the actual verification of whether a principal exists.
  * It handles different principal types (accounts, users, roles, services)
  * and can do cross-account verification if configured.
- * 
+ *
  * @param principal - The principal information to verify
  * @param accountMap - Map of all accounts in the organization
  * @param profile - AWS profile to use

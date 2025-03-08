@@ -15,10 +15,10 @@ import { DEFAULT_REGION, DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../con
 
 /**
  * Register RDS commands
- * 
+ *
  * This function registers the 'list-rds' command with the Commander program.
  * It defines the command options and connects it to the implementation function.
- * 
+ *
  * @param program - The Commander program object to register commands with
  */
 export function registerRDSCommands(program: Command): void {
@@ -41,11 +41,11 @@ export function registerRDSCommands(program: Command): void {
 
 /**
  * Implements the list-rds command
- * 
+ *
  * This function is the main implementation of the 'list-rds' command.
  * It retrieves RDS instances across one or more AWS accounts and regions,
  * then formats and displays the results.
- * 
+ *
  * @param options - Command options as parsed by Commander
  */
 async function listRDSInstances(options: MultiRegionCommandOptions): Promise<void> {

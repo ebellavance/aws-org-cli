@@ -1,5 +1,20 @@
 // File: src/services/elb.ts
-// ELB service functions with DNS resolution
+/**
+ * Elastic Load Balancer (ELB) Service Module
+ *
+ * This module provides functionality for discovering and analyzing Elastic Load Balancers
+ * across AWS accounts and regions. It handles all three types of load balancers:
+ * - Classic Load Balancers (ELB)
+ * - Application Load Balancers (ALB)
+ * - Network Load Balancers (NLB)
+ *
+ * Key features:
+ * - Cross-account discovery with assumed role credentials
+ * - IP address resolution through multiple methods:
+ *   1. EC2 network interface discovery
+ *   2. DNS resolution as fallback
+ * - Comprehensive metadata collection (state, type, DNS name, creation time)
+ */
 
 import {
   ElasticLoadBalancingClient,
@@ -19,6 +34,7 @@ import * as dns from 'dns'
 import { promisify } from 'util'
 
 // Define extended interfaces to help TypeScript understand the AWS SDK types
+// These interfaces ensure type safety when accessing potentially undefined properties
 interface LoadBalancerAddress {
   IpAddress?: string
   PrivateIPv4Address?: string
@@ -28,7 +44,7 @@ interface LoadBalancerAddress {
 interface AvailabilityZone {
   ZoneName?: string
   LoadBalancerAddresses?: LoadBalancerAddress[]
-  // Add other properties as needed
+  // Add other properties that might be missing
 }
 
 interface ExtendedLoadBalancer extends LoadBalancer {
@@ -36,11 +52,19 @@ interface ExtendedLoadBalancer extends LoadBalancer {
   // Add other properties that might be missing
 }
 
-// Promisify the dns.resolve4 and dns.resolve6 functions
+// Promisify the dns.resolve4 function to use modern async/await pattern
+// This converts the callback-based DNS resolution to Promise-based
 const resolve4 = promisify(dns.resolve4)
 
 /**
- * Create clients with appropriate credentials
+ * Create all required AWS clients with appropriate credentials
+ *
+ * This helper function creates clients for ELB, ELBv2, and EC2 services
+ * with the same credentials, making them ready for cross-account operations.
+ *
+ * @param region - AWS region to connect to
+ * @param credentials - Role credentials for cross-account access (or null for default credentials)
+ * @returns Object containing all necessary clients
  */
 function createClients(region: string, credentials: RoleCredentials | null) {
   if (credentials) {
@@ -82,7 +106,16 @@ function createClients(region: string, credentials: RoleCredentials | null) {
 }
 
 /**
- * Get Classic and Application/Network Load Balancers in a specific region of an account
+ * Get all types of Load Balancers in a specific region of an account
+ *
+ * This is the main exported function that consolidates data from both
+ * Classic and Application/Network Load Balancers into a unified format.
+ *
+ * @param region - AWS region to check
+ * @param credentials - Role credentials (null for current account)
+ * @param accountId - AWS account ID
+ * @param accountName - AWS account name for display purposes
+ * @returns Promise resolving to an array of formatted ELB information
  */
 export async function getELBs(
   region: string,
@@ -108,6 +141,16 @@ export async function getELBs(
 
 /**
  * Get Classic ELBs (v1)
+ *
+ * Retrieves Classic Load Balancers, which were the original load balancers
+ * offered by AWS before the introduction of ALB and NLB types.
+ *
+ * @param elbClient - Classic ELB client
+ * @param ec2Client - EC2 client for network interface lookups
+ * @param region - AWS region
+ * @param accountId - AWS account ID
+ * @param accountName - AWS account name
+ * @returns Promise resolving to formatted Classic ELB information
  */
 async function getClassicELBs(
   elbClient: ElasticLoadBalancingClient,
@@ -163,6 +206,17 @@ async function getClassicELBs(
 
 /**
  * Get Application and Network Load Balancers (v2)
+ *
+ * Retrieves newer generation load balancers including Application Load Balancers (ALB),
+ * Network Load Balancers (NLB), and Gateway Load Balancers (GWLB).
+ * These have different API endpoints and data structures than Classic ELBs.
+ *
+ * @param elbv2Client - ELBv2 client for ALB/NLB/GWLB
+ * @param ec2Client - EC2 client for network interface lookups
+ * @param region - AWS region
+ * @param accountId - AWS account ID
+ * @param accountName - AWS account name
+ * @returns Promise resolving to formatted ALB/NLB/GWLB information
  */
 async function getALBNLBs(
   elbv2Client: ElasticLoadBalancingV2Client,
@@ -244,6 +298,12 @@ async function getALBNLBs(
 
 /**
  * Resolve ELB DNS name to IP addresses
+ *
+ * This function uses Node's DNS module to resolve ELB DNS names to IP addresses.
+ * It serves as a fallback method when EC2 network interface discovery fails.
+ *
+ * @param dnsName - DNS name of the load balancer
+ * @returns Promise resolving to an array of IP addresses
  */
 async function resolveElbDns(dnsName?: string): Promise<string[]> {
   if (!dnsName) {
@@ -256,14 +316,14 @@ async function resolveElbDns(dnsName?: string): Promise<string[]> {
 
     // Optionally, you can also resolve IPv6 addresses
     /*
-  try {
-    const ipv6Addresses = await resolve6(dnsName)
-    return [...ipv4Addresses, ...ipv6Addresses]
-  } catch (err) {
-    // IPv6 resolution failed, just return IPv4 addresses
-    return ipv4Addresses
-  }
-  */
+    try {
+      const ipv6Addresses = await resolve6(dnsName)
+      return [...ipv4Addresses, ...ipv6Addresses]
+    } catch (err) {
+      // IPv6 resolution failed, just return IPv4 addresses
+      return ipv4Addresses
+    }
+    */
 
     return ipv4Addresses
   } catch (error) {
@@ -274,6 +334,14 @@ async function resolveElbDns(dnsName?: string): Promise<string[]> {
 
 /**
  * Get IP addresses for an ELB by querying its network interfaces
+ *
+ * This function looks up the EC2 network interfaces associated with an ELB
+ * by matching the ELB's DNS name in the network interface description.
+ * This is more accurate than DNS resolution as it can identify private IPs.
+ *
+ * @param ec2Client - EC2 client
+ * @param dnsName - DNS name of the load balancer
+ * @returns Promise resolving to an object with privateIps and publicIps arrays
  */
 async function getELBIpAddresses(
   ec2Client: EC2Client,
@@ -335,6 +403,16 @@ async function getELBIpAddresses(
 
 /**
  * Format Classic ELB (v1) information
+ *
+ * This function standardizes the Classic ELB data into the common ELBInfo format
+ * for consistent handling downstream.
+ *
+ * @param loadBalancer - Classic ELB description from AWS SDK
+ * @param ipAddresses - Resolved IP addresses
+ * @param region - AWS region
+ * @param accountId - AWS account ID
+ * @param accountName - AWS account name
+ * @returns Formatted ELBInfo object
  */
 function formatClassicELBInfo(
   loadBalancer: LoadBalancerDescription,
@@ -360,6 +438,17 @@ function formatClassicELBInfo(
 
 /**
  * Format Application/Network Load Balancer (v2) information
+ *
+ * This function standardizes the ALB/NLB data into the common ELBInfo format
+ * for consistent handling downstream. It also detects the specific type of
+ * load balancer (application, network, or gateway).
+ *
+ * @param loadBalancer - ALB/NLB/GWLB description from AWS SDK
+ * @param ipAddresses - Resolved IP addresses
+ * @param region - AWS region
+ * @param accountId - AWS account ID
+ * @param accountName - AWS account name
+ * @returns Formatted ELBInfo object
  */
 function formatALBNLBInfo(
   loadBalancer: LoadBalancer,
