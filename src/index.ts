@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Command } from 'commander'
 import { registerCommands } from './commands'
 import { APP_NAME, APP_DESCRIPTION, APP_VERSION } from './config/constants'
