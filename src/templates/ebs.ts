@@ -287,7 +287,11 @@ export function generateEBSHtml(
             background-color: #f9f9f9;
             border-radius: 4px;
         }
-        .resource-available, .resource-in-use {
+        .resource-available {
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .resource-in-use {
             color: green;
             font-weight: bold;
         }
@@ -342,7 +346,12 @@ export function generateEBSHtml(
             min-width: 120px;
             text-align: center;
         }
-        .state-available, .state-in-use {
+        .state-available {
+            background-color: #cce5ff; /* Light blue background */
+            border: 1px solid #b8daff;
+            color: #004085; /* Dark blue text */
+        }
+        .state-in-use {
             background-color: #d4edda;
             border: 1px solid #c3e6cb;
             color: #155724;
