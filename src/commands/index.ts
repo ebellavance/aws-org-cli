@@ -10,6 +10,7 @@ import { registerOpenSearchCommands } from './opensearch'
 import { registerELBCommands } from './elb'
 import { registerPolicyCommands } from './policy'
 import { registerCleanCommands } from './clean'
+import { registerEBSCommands } from './ebs'
 
 /**
  * Register all commands with the CLI program
@@ -47,6 +48,9 @@ export function registerCommands(program: Command): void {
 
   // Register Elastic Load Balancer commands
   registerELBCommands(program)
+
+  // Register EBS volume commands
+  registerEBSCommands(program)
 
   // Register policy verification commands
   registerPolicyCommands(program)

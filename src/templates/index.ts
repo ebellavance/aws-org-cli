@@ -7,5 +7,6 @@ export * from './opensearch'
 export * from './accounts'
 export * from './elb'
 export * from './policy'
+export * from './ebs'
 // Add other templates as they are created
 // export * from './organization-template'

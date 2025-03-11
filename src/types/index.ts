@@ -128,3 +128,23 @@ export interface PolicyPrincipalInfo {
   Principal: string
   AccountId?: string
 }
+
+// EBS volume information
+export interface EBSVolumeInfo {
+  AccountId: string
+  AccountName: string
+  Region: string
+  VolumeId: string
+  Name: string
+  Type: string
+  Size: number
+  IOPS: number
+  Throughput: number
+  AvailabilityZone: string
+  State: string
+  AttachedResources: string
+  CreateTime: string
+  Encrypted: boolean
+  KmsKeyId: string
+  MultiAttachEnabled: boolean
+}

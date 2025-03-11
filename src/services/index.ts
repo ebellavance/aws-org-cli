@@ -42,3 +42,7 @@ export * from './elb'
 // Pricing service - Functions for retrieving AWS service pricing information
 // Contains functions to get EC2 instance pricing with support for different operating systems
 export * from './pricing'
+
+// EBS service - Functions for managing and retrieving information about EBS volumes
+// Contains functions to list EBS volumes and their configurations across accounts
+export * from './ebs'
