@@ -730,6 +730,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
           <th>State</th>
           <th>Type</th>
           <th>Operating System</th>
+          <th>Role</th>
           <th>Private IP</th>
           <th>Public IP</th>
           <th>Region</th>
@@ -806,6 +807,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         <td class="${stateClass}">${instance.State}</td>
         <td>${instance.Type}</td>
         <td class="${osClass}"><div class="os-icon ${osClass}"></div>${instance.OS}</td>
+        <td>${instance.Role || 'N/A'}</td>
         <td>${instance.PrivateIp}</td>
         <td>${instance.PublicIp}</td>
         <td>${instance.Region}</td>

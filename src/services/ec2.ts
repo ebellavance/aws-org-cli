@@ -190,6 +190,10 @@ export async function formatInstanceInfo(
   const nameTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Name')
   const name = nameTag?.Value || 'Unnamed'
 
+  // Extract the Role tag
+  const roleTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Role')
+  const role = roleTag?.Value || ''
+
   // Get detailed OS information
   const os = await determineDetailedOS(instance, ec2Client)
 
@@ -204,6 +208,7 @@ export async function formatInstanceInfo(
     PrivateIp: instance.PrivateIpAddress || 'None',
     PublicIp: instance.PublicIpAddress || 'None',
     OS: os,
+    Role: role,
   }
 }
 
