@@ -15,6 +15,7 @@ export interface EC2InstanceInfo {
   HourlyPrice?: string // Optional hourly price field
   OS: string // Operating system information
   Role?: string // Optional Role tag information
+  Tags?: Record<string, string>
 }
 
 // RDS instance information

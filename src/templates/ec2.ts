@@ -721,6 +721,25 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
   // Check if pricing data is available for any instance
   const hasPricing = sortedInstances.some((instance) => 'HourlyPrice' in instance)
 
+  // Check if any instances have Tags
+  const hasTags = sortedInstances.some((instance) => instance.Tags && Object.keys(instance.Tags).length > 0)
+
+  let tagKeys: string[] = []
+
+  // Only process tags if any instance has them
+  if (hasTags) {
+    // Get all unique tag keys across all instances
+    const tagKeysSet = new Set<string>()
+    sortedInstances.forEach((instance) => {
+      if (instance.Tags) {
+        Object.keys(instance.Tags).forEach((key) => tagKeysSet.add(key))
+      }
+    })
+
+    // Convert to array and sort alphabetically
+    tagKeys = Array.from(tagKeysSet).sort()
+  }
+
   let tableHtml = `
     <table>
       <thead>
@@ -730,7 +749,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
           <th>State</th>
           <th>Type</th>
           <th>Operating System</th>
-          <th>Role</th>
+          ${hasTags ? tagKeys.map((key) => `<th>Tag: ${key}</th>`).join('') : ''}
           <th>Private IP</th>
           <th>Public IP</th>
           <th>Region</th>
@@ -800,6 +819,17 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
       }
     }
 
+    // Generate HTML for tag columns only if we have tags
+    let tagColumnsHtml = ''
+    if (hasTags) {
+      tagColumnsHtml = tagKeys
+        .map((key) => {
+          const tagValue = instance.Tags && instance.Tags[key] ? instance.Tags[key] : ''
+          return `<td>${tagValue}</td>`
+        })
+        .join('')
+    }
+
     tableHtml += `
       <tr>
         <td>${instance.Name}</td>
@@ -807,7 +837,7 @@ function generateEC2Table(instances: EC2InstanceInfo[]): string {
         <td class="${stateClass}">${instance.State}</td>
         <td>${instance.Type}</td>
         <td class="${osClass}"><div class="os-icon ${osClass}"></div>${instance.OS}</td>
-        <td>${instance.Role || 'N/A'}</td>
+        ${tagColumnsHtml}
         <td>${instance.PrivateIp}</td>
         <td>${instance.PublicIp}</td>
         <td>${instance.Region}</td>
