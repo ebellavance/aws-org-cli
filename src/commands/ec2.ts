@@ -1,6 +1,6 @@
 // File: src/commands/ec2.ts
 // This file implements the 'list-ec2' command for the CLI tool, which retrieves and displays
-// EC2 instance information across AWS accounts with optional pricing details.
+// EC2 instance information across AWS accounts in an organization with optional pricing details.
 
 import { Command } from 'commander'
 import { MultiRegionCommandOptions, EC2InstanceInfo } from '../types'
@@ -13,9 +13,10 @@ import { collectRegions } from '../utils'
 import { getAccountCredentials } from '../utils/credential-helper'
 import { DEFAULT_REGION, DEFAULT_ROLE_NAME, DEFAULT_OUTPUT_FORMAT } from '../config/constants'
 
-// Extend the base command options to include a flag for EC2 pricing information
+// Extend the base command options to include a flag for EC2 pricing information and tags
 interface EC2CommandOptions extends MultiRegionCommandOptions {
   includePricing?: boolean // Optional flag to include pricing information for EC2 instances
+  includeTag?: string[] // Array of tag keys to include in the output
 }
 
 /**
@@ -38,6 +39,7 @@ export function registerEC2Commands(program: Command): void {
       DEFAULT_REGION, // Default to the region specified in constants if not provided
     ])
     .option('-p, --include-pricing', 'Include hourly pricing information for instances')
+    .option('--include-tag <tag...>', 'Include specific tag(s) in the output (can be specified multiple times)')
     .action(async (options: EC2CommandOptions) => {
       // Execute the command implementation with the provided options
       await listEC2Instances(options)
@@ -109,6 +111,7 @@ async function listEC2Instances(options: EC2CommandOptions): Promise<void> {
                 accountId,
                 accountName,
                 options.includePricing, // Flag to include pricing information
+                options.includeTag, // Array of tag keys to include
               )
 
               console.log(`Found ${instancesInRegion.length} instances in ${region} for account ${accountId}`)

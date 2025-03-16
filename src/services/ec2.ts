@@ -177,6 +177,7 @@ async function determineDetailedOS(instance: Instance, ec2Client: EC2Client): Pr
  * @param region - AWS region the instance is in
  * @param accountId - AWS account ID the instance belongs to
  * @param accountName - AWS account name for display purposes
+ * @param includeTags - Optional array of tag keys to include in the output
  * @returns Formatted EC2InstanceInfo object
  */
 export async function formatInstanceInfo(
@@ -185,19 +186,17 @@ export async function formatInstanceInfo(
   region: string,
   accountId: string,
   accountName: string,
+  includeTags?: string[],
 ): Promise<EC2InstanceInfo> {
   // Extract the Name tag
   const nameTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Name')
   const name = nameTag?.Value || 'Unnamed'
 
-  // Extract the Role tag
-  const roleTag = instance.Tags?.find((tag: { Key?: string; Value?: string }) => tag.Key === 'Role')
-  const role = roleTag?.Value || ''
-
   // Get detailed OS information
   const os = await determineDetailedOS(instance, ec2Client)
 
-  return {
+  // Create the base instance info without tags
+  const instanceInfo: EC2InstanceInfo = {
     AccountId: accountId,
     AccountName: accountName,
     Region: region,
@@ -208,8 +207,28 @@ export async function formatInstanceInfo(
     PrivateIp: instance.PrivateIpAddress || 'None',
     PublicIp: instance.PublicIpAddress || 'None',
     OS: os,
-    Role: role,
   }
+
+  // Only include tags if specifically requested
+  if (includeTags && includeTags.length > 0) {
+    const tags: Record<string, string> = {}
+
+    // Improved Tag Extraction - Log available tags first
+    if (instance.Tags && instance.Tags.length > 0) {
+      // Process each requested tag
+      includeTags.forEach((tagKey) => {
+        const tag = instance.Tags?.find((t) => t.Key === tagKey)
+        if (tag && tag.Value) {
+          tags[tagKey] = tag.Value
+        }
+      })
+    }
+
+    // Always add Tags property even if empty, to ensure it's in the output
+    instanceInfo.Tags = tags
+  }
+
+  return instanceInfo
 }
 
 /**
@@ -224,6 +243,7 @@ export async function formatInstanceInfo(
  * @param accountId - Account ID
  * @param accountName - Account name
  * @param includePricing - Whether to include pricing information
+ * @param includeTags - Optional array of tag keys to include in the output
  * @returns Array of EC2 instance information objects
  */
 export async function getEC2Instances(
@@ -232,6 +252,7 @@ export async function getEC2Instances(
   accountId: string,
   accountName: string,
   includePricing = false,
+  includeTags?: string[],
 ): Promise<EC2InstanceInfo[]> {
   // Create EC2 client with appropriate credentials
   const ec2Client = getEC2Client(region, credentials)
@@ -253,7 +274,7 @@ export async function getEC2Instances(
         // Use Promise.all to process instances concurrently
         const instancePromises = response.Reservations.flatMap((reservation) =>
           (reservation.Instances || []).map((instance) =>
-            formatInstanceInfo(instance, ec2Client, region, accountId, accountName),
+            formatInstanceInfo(instance, ec2Client, region, accountId, accountName, includeTags),
           ),
         )
 

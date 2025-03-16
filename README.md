@@ -92,10 +92,13 @@ Options:
 - `-o, --output <format>` - Output format (json, table, html) (default: "table")
 - `-a, --account-id <accountId>` - Specific account ID to check
 - `--region <region>` - AWS region to check (can be specified multiple times) (default: ["ca-central-1"])
+- `-p, --include-pricing` - Include hourly pricing information for instances
+- `--include-tag <tag...>` - Include specific tag(s) in the output (can be specified multiple times)
 
 Example:
 
 ```bash
+aws-org list-ec2 --include-tag Role --output html
 aws-org list-ec2 --region us-east-1 --region us-west-2 --output html
 ```
 
