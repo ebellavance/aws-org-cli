@@ -1,5 +1,6 @@
 // File: src/types/index.ts
 // Central location for shared types
+import { NetworkInterface } from '@aws-sdk/client-ec2'
 
 // EC2 instance information with pricing
 export interface EC2InstanceInfo {
@@ -149,4 +150,19 @@ export interface EBSVolumeInfo {
   Encrypted: boolean
   KmsKeyId: string
   MultiAttachEnabled: boolean
+}
+
+// HENI (Hyperplane ENI) information
+export interface HENIInfo {
+  AccountId: string
+  AccountName: string
+  Region: string
+  TotalENIs: number
+  AvailableENIs: number
+  InUseENIs: number
+  TotalHENIs: number
+  TotalLambdaHENIs: number
+  RegularENIs: NetworkInterface[]
+  HyperplaneENIs: NetworkInterface[]
+  LambdaHENIs: NetworkInterface[]
 }
