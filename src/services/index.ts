@@ -46,3 +46,7 @@ export * from './pricing'
 // EBS service - Functions for managing and retrieving information about EBS volumes
 // Contains functions to list EBS volumes and their configurations across accounts
 export * from './ebs'
+
+// HENI service - Functions for discovering and analyzing hyperplane ENIs
+// Contains functions to identify hyperplane ENIs and Lambda hyperplane ENIs
+export * from './heni'

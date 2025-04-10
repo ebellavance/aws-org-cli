@@ -11,6 +11,7 @@ import {
   generateELBHtml as generateELBTemplate,
   generatePolicyVerificationHtml as generatePolicyVerificationTemplate,
   generateEBSHtml as generateEBSTemplate,
+  generateHENIHtml as generateHENITemplate,
 } from '../templates'
 import {
   EC2InstanceInfo,
@@ -20,6 +21,7 @@ import {
   PolicyDocument,
   PolicyVerificationResult,
   EBSVolumeInfo,
+  HENIInfo,
 } from '../types'
 
 export function generateEC2Html(
@@ -78,6 +80,15 @@ export function generateEBSHtml(
   allAccounts?: Record<string, unknown>[],
 ): string {
   return generateEBSTemplate(volumes, title, totalAccounts, allAccounts)
+}
+
+export function generateHENIHtml(
+  heniInfos: HENIInfo[],
+  title: string,
+  totalAccounts?: number,
+  allAccounts?: Record<string, unknown>[],
+): string {
+  return generateHENITemplate(heniInfos, title, totalAccounts, allAccounts)
 }
 
 /**

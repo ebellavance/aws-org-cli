@@ -14,6 +14,7 @@ A command-line interface tool to retrieve and analyze information from AWS Organ
     - [list-rds](#list-rds)
     - [list-opensearch](#list-opensearch)
     - [list-elb](#list-elb)
+    - [list-heni](#list-heni)
   - [Policy Commands](#policy-commands)
     - [verify-principals](#verify-principals)
 - [Output Formats](#output-formats)
@@ -166,6 +167,30 @@ Example:
 
 ```bash
 aws-org list-elb --output html
+```
+
+#### list-heni
+
+List hyperplane ENIs (HENIs) across all accounts in the organization, with special focus on Lambda HENIs.
+
+```bash
+aws-org list-heni [options]
+```
+
+Options:
+
+- `--profile <profile>` - AWS profile to use
+- `-r, --role-name <roleName>` - Role to assume in target accounts (default: "OrganizationAccountAccessRole")
+- `-o, --output <format>` - Output format (json, table, html) (default: "table")
+- `-a, --account-id <accountId>` - Specific account ID to check
+- `--region <region>` - AWS region to check (can be specified multiple times) (default: ["ca-central-1"])
+- `-v, --verbose` - Show detailed information about each hyperplane ENI
+
+Example:
+
+```bash
+aws-org list-heni --output html
+aws-org list-heni --verbose --region us-east-1
 ```
 
 ### Policy Commands

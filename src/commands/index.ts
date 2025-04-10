@@ -11,6 +11,7 @@ import { registerELBCommands } from './elb'
 import { registerPolicyCommands } from './policy'
 import { registerCleanCommands } from './clean'
 import { registerEBSCommands } from './ebs'
+import { registerHENICommands } from './heni'
 
 /**
  * Register all commands with the CLI program
@@ -57,4 +58,7 @@ export function registerCommands(program: Command): void {
 
   // Register cleanup utility commands
   registerCleanCommands(program)
+
+  // Register HENI (Hyperplane ENI) commands
+  registerHENICommands(program)
 }
