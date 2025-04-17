@@ -9,5 +9,6 @@ export * from './elb'
 export * from './policy'
 export * from './ebs'
 export * from './heni'
+export * from './role'
 // Add other templates as they are created
 // export * from './organization-template'
