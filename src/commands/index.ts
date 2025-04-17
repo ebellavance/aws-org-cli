@@ -12,6 +12,7 @@ import { registerPolicyCommands } from './policy'
 import { registerCleanCommands } from './clean'
 import { registerEBSCommands } from './ebs'
 import { registerHENICommands } from './heni'
+import { registerRoleCommands } from './role'
 
 /**
  * Register all commands with the CLI program
@@ -61,4 +62,7 @@ export function registerCommands(program: Command): void {
 
   // Register HENI (Hyperplane ENI) commands
   registerHENICommands(program)
+
+  // Register IAM role counting commands
+  registerRoleCommands(program)
 }

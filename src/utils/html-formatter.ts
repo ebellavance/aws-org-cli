@@ -12,6 +12,7 @@ import {
   generatePolicyVerificationHtml as generatePolicyVerificationTemplate,
   generateEBSHtml as generateEBSTemplate,
   generateHENIHtml as generateHENITemplate,
+  generateRoleCountHtml as generateRoleCountTemplate,
 } from '../templates'
 import {
   EC2InstanceInfo,
@@ -89,6 +90,14 @@ export function generateHENIHtml(
   allAccounts?: Record<string, unknown>[],
 ): string {
   return generateHENITemplate(heniInfos, title, totalAccounts, allAccounts)
+}
+
+export function generateRoleCountHtml(
+  formattedResults: Record<string, unknown>[],
+  accountRoleCounts: Map<string, { counts: Record<string, number>; accountName: string }>,
+  title: string,
+): string {
+  return generateRoleCountTemplate(formattedResults, accountRoleCounts, title)
 }
 
 /**

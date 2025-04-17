@@ -15,6 +15,7 @@ A command-line interface tool to retrieve and analyze information from AWS Organ
     - [list-opensearch](#list-opensearch)
     - [list-elb](#list-elb)
     - [list-heni](#list-heni)
+    - [count-role](#count-role)
   - [Policy Commands](#policy-commands)
     - [verify-principals](#verify-principals)
 - [Output Formats](#output-formats)
@@ -193,6 +194,29 @@ aws-org list-heni --output html
 aws-org list-heni --verbose --region us-east-1
 ```
 
+#### count-role
+
+Count IAM roles across accounts in the organization, categorizing them by type.
+
+```bash
+aws-org count-role [options]
+```
+
+Options:
+
+- `--profile <profile>` - AWS profile to use
+- `-r, --role-name <roleName>` - Role to assume in target accounts (default: "OrganizationAccountAccessRole")
+- `-o, --output <format>` - Output format (json, table, html) (default: "table")
+- `-a, --account-id <accountId>` - Specific account ID to check
+
+Example:
+
+```bash
+aws-org count-role
+aws-org count-role --account-id 123456789012
+aws-org count-role --output html
+```
+
 ### Policy Commands
 
 #### verify-principals
@@ -257,6 +281,12 @@ Generate an HTML report of all RDS instances:
 
 ```bash
 aws-org list-rds --output html
+```
+
+Count IAM roles across all accounts in the organization:
+
+```bash
+aws-org count-role --output html
 ```
 
 Verify principals in a policy file with cross-account verification:
