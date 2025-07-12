@@ -32,7 +32,7 @@
     "lint:fix": "npm run lint:eslint:fix && npm run lint:prettier:fix"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.756.0",
+    "@aws-sdk/client-ec2": "^3.830.0",
     "@aws-sdk/client-elastic-load-balancing": "^3.758.0",
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.758.0",
     "@aws-sdk/client-iam": "^3.758.0",
