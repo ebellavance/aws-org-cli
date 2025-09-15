@@ -166,3 +166,12 @@ export interface HENIInfo {
   HyperplaneENIs: NetworkInterface[]
   LambdaHENIs: NetworkInterface[]
 }
+
+// S3 bucket information - Add this to src/types/index.ts
+export interface S3BucketInfo {
+  AccountId: string
+  AccountName: string
+  BucketName: string
+  Region: string
+  CreationDate: string
+}

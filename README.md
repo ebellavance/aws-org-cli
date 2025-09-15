@@ -15,6 +15,7 @@ A command-line interface tool to retrieve and analyze information from AWS Organ
     - [list-opensearch](#list-opensearch)
     - [list-elb](#list-elb)
     - [list-heni](#list-heni)
+    - [list-s3](#list-s3)
     - [count-role](#count-role)
   - [Policy Commands](#policy-commands)
     - [verify-principals](#verify-principals)
@@ -192,6 +193,31 @@ Example:
 ```bash
 aws-org list-heni --output html
 aws-org list-heni --verbose --region us-east-1
+```
+
+#### list-s3
+
+List S3 buckets across all accounts in the organization.
+
+```bash
+aws-org list-s3 [options]
+```
+
+Options:
+
+- `--profile <profile>` - AWS profile to use
+- `-r, --role-name <roleName>` - Role to assume in target accounts (default: "OrganizationAccountAccessRole")
+- `-o, --output <format>` - Output format (json, table, html) (default: "table")
+- `-a, --account-id <accountId>` - Specific account ID to check
+- `--region <region>` - AWS region to check (can be specified multiple times) (default: ["ca-central-1"])
+
+Note: S3 bucket listing is global, but the region parameter is used for client configuration and bucket detail retrieval.
+
+Example:
+
+```bash
+aws-org list-s3 --output html
+aws-org list-s3 --account-id 123456789012 --output json
 ```
 
 #### count-role

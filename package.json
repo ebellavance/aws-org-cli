@@ -40,6 +40,7 @@
     "@aws-sdk/client-organizations": "^3.750.0",
     "@aws-sdk/client-pricing": "^3.758.0",
     "@aws-sdk/client-rds": "^3.753.0",
+    "@aws-sdk/client-s3": "^3.888.0",
     "@aws-sdk/client-sts": "^3.750.0",
     "@aws-sdk/credential-providers": "^3.750.0",
     "commander": "^13.1.0",

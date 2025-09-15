@@ -50,3 +50,7 @@ export * from './ebs'
 // HENI service - Functions for discovering and analyzing hyperplane ENIs
 // Contains functions to identify hyperplane ENIs and Lambda hyperplane ENIs
 export * from './heni'
+
+// S3 service - Functions for managing and retrieving information about S3 buckets
+// Contains functions to list S3 buckets and their configurations across accounts
+export * from './s3'

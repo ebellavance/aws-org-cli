@@ -13,6 +13,7 @@ import { registerCleanCommands } from './clean'
 import { registerEBSCommands } from './ebs'
 import { registerHENICommands } from './heni'
 import { registerRoleCommands } from './role'
+import { registerS3Commands } from './s3'
 
 /**
  * Register all commands with the CLI program
@@ -65,4 +66,7 @@ export function registerCommands(program: Command): void {
 
   // Register IAM role counting commands
   registerRoleCommands(program)
+
+  // Register S3 bucket commands
+  registerS3Commands(program)
 }

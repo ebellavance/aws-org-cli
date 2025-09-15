@@ -13,6 +13,7 @@ import {
   generateEBSHtml as generateEBSTemplate,
   generateHENIHtml as generateHENITemplate,
   generateRoleCountHtml as generateRoleCountTemplate,
+  generateS3Html as generateS3Template,
 } from '../templates'
 import {
   EC2InstanceInfo,
@@ -23,6 +24,7 @@ import {
   PolicyVerificationResult,
   EBSVolumeInfo,
   HENIInfo,
+  S3BucketInfo,
 } from '../types'
 
 export function generateEC2Html(
@@ -90,6 +92,15 @@ export function generateHENIHtml(
   allAccounts?: Record<string, unknown>[],
 ): string {
   return generateHENITemplate(heniInfos, title, totalAccounts, allAccounts)
+}
+
+export function generateS3Html(
+  buckets: S3BucketInfo[],
+  title: string,
+  totalAccounts?: number,
+  allAccounts?: Record<string, unknown>[],
+): string {
+  return generateS3Template(buckets, title, totalAccounts, allAccounts)
 }
 
 export function generateRoleCountHtml(

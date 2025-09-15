@@ -6,6 +6,7 @@ import { EC2Client, EC2ClientConfig } from '@aws-sdk/client-ec2'
 import { RDSClient, RDSClientConfig } from '@aws-sdk/client-rds'
 import { STSClient, STSClientConfig } from '@aws-sdk/client-sts'
 import { IAMClient, IAMClientConfig } from '@aws-sdk/client-iam'
+import { S3Client, S3ClientConfig } from '@aws-sdk/client-s3'
 import { OpenSearchClient, OpenSearchClientConfig } from '@aws-sdk/client-opensearch'
 import { ElasticLoadBalancingClient, ElasticLoadBalancingClientConfig } from '@aws-sdk/client-elastic-load-balancing'
 import {
@@ -180,5 +181,27 @@ export function createIAMClient(profile?: string, credentials?: RoleCredentials 
   } else {
     // Use current credentials
     return new IAMClient({ region: 'us-east-1' })
+  }
+}
+
+/**
+ * Create an S3 client
+ * @param region AWS region
+ * @param credentials Role credentials (if null, use current credentials)
+ */
+export function createS3Client(region: string, credentials: RoleCredentials | null): S3Client {
+  if (credentials) {
+    const config: S3ClientConfig = {
+      region,
+      credentials: {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+        sessionToken: credentials.sessionToken,
+      },
+    }
+    return new S3Client(config)
+  } else {
+    // Use current credentials
+    return new S3Client({ region })
   }
 }
